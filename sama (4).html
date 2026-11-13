@@ -633,12 +633,18 @@ async function bootUser(user){
     const isGoogle = user.providerData.some(p=>p.providerId === "google.com");
     if(!rec && isGoogle){            // مستخدم جوجل جديد → حفظ الاسم والصورة تلقائياً
       const photo = user.photoURL ? ((await urlToAvatar(user.photoURL)) || user.photoURL) : null;
-      rec = {name:me.name, email:me.email, photo, provider:"google", createdAt:firebase.database.ServerValue.TIMESTAMP};
+      rec = {name:me.name, email:me.email, photo, provider:"google", profileDone:true, createdAt:firebase.database.ServerValue.TIMESTAMP};
       await db.ref("users/"+me.uid).set(rec);
+    }else if(!rec){                    // حساب بريد جديد: يُحفظ فوراً ليظهر في البحث، ثم تُكمل شاشة الملف
+      rec = {name:me.name, email:me.email, photo:null, provider:"password", profileDone:false, createdAt:firebase.database.ServerValue.TIMESTAMP};
+      await db.ref("users/"+me.uid).set(rec);
+    }else if(!rec.name || !rec.email){ // ترميم سجل ناقص (مستخدمون قدامى)
+      const fix = {}; if(!rec.name) fix.name = me.name; if(!rec.email) fix.email = me.email;
+      await db.ref("users/"+me.uid).update(fix); rec = {...rec, ...fix};
     }
   }catch(e){ console.warn(e); failed = true; toast("تعذّر الوصول لقاعدة البيانات — تحقق من القواعد"); }
   if(seq !== bootSeq) return;
-  if(!rec && !failed){ openSetup(true); return; }   // حساب بريد جديد → شاشة اختيار الاسم والصورة
+  if(rec && rec.profileDone === false){ me.name = rec.name || me.name; me.photo = rec.photo || null; openSetup(true); return; }  // حساب بريد جديد → شاشة الاسم والصورة
   if(rec){ if(rec.name) me.name = rec.name; me.photo = rec.photo || null; }
   renderMe(); showScreen("app"); startApp();         // موجود مسبقاً → الرئيسية مباشرة
 }
@@ -673,8 +679,7 @@ $("setupForm").addEventListener("submit", async (e)=>{
   $("setupSave").disabled = true;
   try{
     const data = {name, photo:setupPhoto || null};
-    if(setupFirst) await db.ref("users/"+me.uid).set({...data, email:me.email, provider:"password", createdAt:firebase.database.ServerValue.TIMESTAMP});
-    else await db.ref("users/"+me.uid).update(data);
+    await db.ref("users/"+me.uid).update(setupFirst ? {...data, email:me.email, profileDone:true} : data);
     try{ await auth.currentUser.updateProfile({displayName:name}); }catch{}
     me.name = name; me.photo = setupPhoto || null; renderMe();
     showScreen("app"); if(setupFirst) startApp();
@@ -721,7 +726,7 @@ function stopApp(){
   usersCache = {}; postsCache = {}; friendsSet = {}; userChatsCache = {};
   Object.values(commentListeners).forEach(r=>r.off());
   for(const k in commentListeners) delete commentListeners[k];
-  closeChat(); closeProfile();
+  closeChat(); closeProfile(); usersState = "loading";
   $("feed").innerHTML = "";
   ["chatRecent","chatFriends","chatOthers","searchResults"].forEach(i=>$(i).innerHTML = "");
   $("searchInput").value = ""; $("chatFilter").value = "";
@@ -988,7 +993,17 @@ function mkBtn(icon, label, cls){
 }
 
 // صف شخص: إضافة/إزالة صديق + فتح محادثة
+function matchUser(u, q){            // كل كلمات البحث يجب أن تظهر في الاسم أو البريد (جزء من الاسم يكفي)
+  const hay = norm(u.name) + " " + norm(u.email);
+  return q.split(/\s+/).filter(Boolean).every(t=>hay.includes(t));
+}
 function personRow(uid, u, q){
+  if(me && uid === me.uid){            // أنت: يظهر في البحث بلا أزرار إضافة/مراسلة
+    const it = el("div","user-item glass"); it.appendChild(avatarFor(uid, u.name));
+    const inf = el("div","grow"), nm = el("div","nm"), em = el("div","em");
+    nm.appendChild(hl(u.name || "مستخدم", q)); nm.append(" (أنت)"); em.appendChild(hl(u.email || "", q));
+    inf.append(nm, em); it.appendChild(inf); it.onclick = ()=>showView("viewMe"); return it;
+  }
   const item = el("div","user-item glass");
   item.appendChild(avatarFor(uid, u.name));
   const info = el("div","grow");
@@ -1042,8 +1057,8 @@ function runSearch(){
 
   let people = [], posts = [];
   if(searchTab !== "posts"){
-    people = Object.entries(usersCache)
-      .filter(([,u])=>norm(u.name).includes(q) || norm(u.email).includes(q))
+    people = Object.entries({[me.uid]: me, ...usersCache})
+      .filter(([,u])=>matchUser(u, q))
       .sort((a,b)=>(!!friendsSet[b[0]]) - (!!friendsSet[a[0]]))
       .slice(0, 20);
   }
@@ -1055,7 +1070,7 @@ function runSearch(){
   }
   if(people.length){ box.appendChild(sub("الأشخاص (" + people.length + ")")); people.forEach(([id,u])=>box.appendChild(personRow(id, u, q))); }
   if(posts.length){ box.appendChild(sub("المنشورات (" + posts.length + ")")); posts.forEach(([id,p])=>box.appendChild(postResult(id, p, q))); }
-  if(!people.length && !posts.length) box.appendChild(el("div","empty","لا توجد نتائج لـ «" + raw + "»"));
+  if(!people.length && !posts.length) box.appendChild(el("div","empty", usersState === "loading" ? "جارٍ تحميل المستخدمين…" : usersState === "error" ? "تعذّر قراءة المستخدمين — تحقق من قواعد users في Firebase" : "لا توجد نتائج لـ «" + raw + "»"));
 }
 $("searchInput").addEventListener("input", scheduleSearch);
 $("searchClear").onclick = ()=>{ $("searchInput").value = ""; runSearch(); $("searchInput").focus(); };
@@ -1087,7 +1102,7 @@ async function toggleFriend(uid, name, btn){
 }
 
 /* ═══════ بروفايل الشخص: صورة + اسم + إضافة صديق + مراسلة ═══════ */
-let profileUid = null, profTimer = null;
+let profileUid = null, profTimer = null, usersState = "loading";
 function openProfile(uid){
   if(!me || uid === me.uid){ showView("viewMe"); return; }
   profileUid = uid; renderProfile();
@@ -1122,8 +1137,8 @@ function listenUsers(){
       if(c.key === me.uid){ if(v.name) me.name = v.name; me.photo = v.photo || null; }
       else usersCache[c.key] = v;
     });
-    renderMe(); renderChats(); scheduleSearch();
-  }, err=>console.error(err));
+    usersState = "ok"; renderMe(); renderChats(); scheduleSearch();
+  }, err=>{ console.error(err); usersState = "error"; scheduleSearch(); });
 
   friendsRef = db.ref("friends/"+me.uid);
   friendsRef.on("value", s=>{
@@ -1160,7 +1175,7 @@ function renderChats(){
 
   // الأصدقاء ثم بقية الأشخاص
   const byName = (a,b)=>String(a[1].name||"").localeCompare(String(b[1].name||""), "ar");
-  const users = Object.entries(usersCache).filter(([,u])=>!q || norm(u.name).includes(q) || norm(u.email).includes(q));
+  const users = Object.entries(usersCache).filter(([,u])=>!q || matchUser(u, q));
   const fr = users.filter(([id])=>friendsSet[id]).sort(byName);
   const ot = users.filter(([id])=>!friendsSet[id]).sort(byName);
   if(fr.length){ fri.appendChild(sub("أصدقائي (" + fr.length + ")")); fr.forEach(([id,u])=>fri.appendChild(personRow(id, u, q))); }
