@@ -639,8 +639,8 @@ let usersCache = {}, postsCache = {}, friendsSet = {}, userChatsCache = {};
 let searchTab = "all", searchTimer = null;
 
 /* ── متغيرات الشورتز ── */
-const MAX_SHORT_SEC = 60;      // أقصى مدة (ثانية)
-const SHORTS_LIMIT  = 6;       // عدد المقاطع المحمّلة (الأحدث)
+const MAX_SHORT_SEC = 10;      // أقصى مدة (ثانية) — يُقتطع ما زاد عنها
+const SHORTS_LIMIT  = 30;      // عدد المقاطع المحمّلة (الأحدث) — كل مقطع ≤ 220KB
 let shortsRef = null, shortsLoaded = false, shortsMuted = false, currentShort = null;
 const shortEls = {}, shortsCache = {};
 let scId = null, scRef = null;          // نافذة تعليقات الشورت
@@ -1144,7 +1144,7 @@ function updatePost(id, p){
    ───────────────────────────────────────────────────────────
    البنية في قاعدة البيانات:
      shorts/{id} → {uid, name, photo, text, ts, commentsCount, likes, video:"data:video/...;base64,..."}
-   مسار واحد فقط (shorts.push). ولتخفيف التحميل نعرض أحدث 6 مقاطع ونضغط الفيديو قبل الرفع.
+   مسار واحد فقط (shorts.push). ويُضغط الفيديو بقوة قبل الرفع ليبقى كل مقطع ≤ 220KB (Base64).
    ═══════════════════════════════════════════════════════════ */
 
 /* مراقب التشغيل: الفيديو الظاهر (≥60%) يعمل والباقي يتوقف */
@@ -1425,8 +1425,17 @@ $("scForm").addEventListener("submit", async (e)=>{
 
 /* ── رفع شورت جديد (يقبل أي فيديو + ضغط تلقائي) ── */
 const MAX_RAW_MB       = 500;  // أقصى حجم للملف المختار من الهاتف
-const COMPRESS_OVER_MB = 2;    // أي فيديو أكبر من هذا يُضغط تلقائياً قبل الرفع
-const MAX_FINAL_MB     = 5;    // أقصى حجم بعد المعالجة (قبل تحويله إلى Base64)
+const MAX_B64_KB       = 220;  // أقصى حجم للنص النهائي (Base64) المسموح حفظه — غيّره هنا فقط
+const MAX_B64_BYTES    = MAX_B64_KB * 1024;
+const MAX_BLOB_BYTES   = Math.floor((MAX_B64_BYTES - 64) * 3 / 4);   // الحد المقابل للملف قبل التحويل (~165KB)
+const COMPRESS_OVER_B  = 100 * 1024;   // أي فيديو أكبر من 100KB يُضغط تلقائياً
+/* محاولات الضغط من الأخف للأقوى: [ضلع قصير بالبكسل، حجم مستهدف بالبايت، مع صوت؟] */
+const COMPRESS_STEPS = [
+  {short:320, targetBytes:125*1024, audio:true},
+  {short:240, targetBytes:105*1024, audio:false},
+  {short:176, targetBytes:85*1024,  audio:false}
+];
+const TOO_BIG_MSG = "الفيديو كبير جداً على حدّ قاعدة البيانات (" + MAX_B64_KB + "KB). اختر فيديو أقصر (أقل من 3–5 ثوانٍ) أو بدقة أقل ثم أعد المحاولة.";
 let upMeta = {dur:0, playable:null};
 
 function guessMime(f){
@@ -1444,7 +1453,7 @@ function setUpBar(p){
 function fileToDataURL(blob){
   return new Promise((res,rej)=>{
     const r = new FileReader();
-    r.onerror = ()=>rej(new Error("read")); r.onload = ()=>res(r.result);
+    r.onerror = ()=>rej(Object.assign(new Error("تعذّر قراءة ملف الفيديو من الجهاز، أعد اختياره ثم حاول مجدداً"), {code:"READ_FAILED"})); r.onload = ()=>res(r.result);
     r.readAsDataURL(blob);
   });
 }
@@ -1501,9 +1510,10 @@ function compressVideo(file, o, onProg){
         }catch(e){ hasAudio = false; }
 
         const mime = pickRecorderMime();
-        const audioBps = hasAudio ? 64000 : 0;
-        const budget = o.targetMB * 1048576 * 8 * 0.85 / dur;            // بت/ثانية متاحة للحجم المستهدف
-        const vbps = Math.round(Math.max(150000, Math.min(2500000, budget - audioBps)));
+        if(!o.audio){ stream.getAudioTracks().forEach(t=>stream.removeTrack(t)); hasAudio = false; }
+        const audioBps = hasAudio ? 20000 : 0;
+        const budget = o.targetBytes * 8 * 0.7 / dur;                    // بت/ثانية (هامش أمان 30% لأن المسجّل يتجاوز الهدف أحياناً)
+        const vbps = Math.round(Math.max(20000, Math.min(800000, budget - audioBps)));
         const opts = {videoBitsPerSecond: vbps};
         if(mime) opts.mimeType = mime;
         if(hasAudio) opts.audioBitsPerSecond = audioBps;
@@ -1584,7 +1594,7 @@ $("upFile").addEventListener("change", (e)=>{
     upMeta.playable = true; upMeta.dur = v.duration || 0;
     let t = base + " · " + Math.round(upMeta.dur) + " ث";
     if(upMeta.dur > MAX_SHORT_SEC) t += " — سيُقتطع أول " + MAX_SHORT_SEC + " ثانية";
-    else if(f.size > COMPRESS_OVER_MB * 1048576) t += " — سيُضغط تلقائياً قبل النشر";
+    else if(f.size > COMPRESS_OVER_B) t += " — سيُضغط تلقائياً قبل النشر";
     setUpInfo(t);
   };
   v.onerror = ()=>{                                     // لا نمنع النشر: نعرض أيقونة بدل المعاينة
@@ -1599,37 +1609,38 @@ $("upFile").addEventListener("change", (e)=>{
 
 $("upPublish").onclick = async ()=>{
   if(!upFile || upBusy) return;
-  const text = $("upDesc").value.trim(), file = upFile, limit = MAX_FINAL_MB * 1048576;
+  const text = $("upDesc").value.trim(), file = upFile;
+  const tooBig = ()=>Object.assign(new Error(TOO_BIG_MSG), {code:"TOO_BIG"});
   upBusy = true; $("upPublish").disabled = true; $("upCancel").disabled = true; $("upErr").textContent = "";
   $("upPublish").textContent = "جارٍ المعالجة…";
   const ref = db.ref("shorts").push();
   try{
     let blob = file;
-    const needCompress = file.size > COMPRESS_OVER_MB * 1048576 || upMeta.dur > MAX_SHORT_SEC;
-    if(needCompress && upMeta.playable !== false){
-      try{
-        const prog = (p)=>{ setUpBar(p); setUpInfo("جارٍ ضغط الفيديو… " + Math.round(p*100) + "% (ابقَ في هذه الصفحة)"); };
-        setUpInfo("جارٍ ضغط الفيديو… 0% (ابقَ في هذه الصفحة)"); setUpBar(0);
-        blob = await compressVideo(file, {short:480, targetMB:3.5, maxSec:MAX_SHORT_SEC}, prog);
-        if(blob.size > limit){                         // ما زال كبيراً → محاولة ثانية بدقة وجودة أقل
-          setUpInfo("إعادة الضغط بجودة أقل…"); setUpBar(0);
-          blob = await compressVideo(file, {short:360, targetMB:2.2, maxSec:MAX_SHORT_SEC}, prog);
+    const mustCompress = file.size > COMPRESS_OVER_B || upMeta.dur > MAX_SHORT_SEC;
+    if(mustCompress && upMeta.playable !== false){
+      const prog = (p)=>{ setUpBar(p); };
+      for(let i = 0; i < COMPRESS_STEPS.length; i++){
+        const st = COMPRESS_STEPS[i];
+        setUpInfo("جارٍ ضغط الفيديو (محاولة " + (i+1) + "/" + COMPRESS_STEPS.length + ")… ابقَ في هذه الصفحة"); setUpBar(0);
+        try{
+          blob = await compressVideo(file, {short:st.short, targetBytes:st.targetBytes, audio:st.audio, maxSec:MAX_SHORT_SEC}, prog);
+        }catch(e){
+          console.warn("compress failed:", e);
+          blob = null; break;                         // المتصفح لا يدعم الضغط أو تعذّر فك الفيديو
         }
-        if(blob.size >= file.size && file.size <= limit && !(upMeta.dur > MAX_SHORT_SEC)) blob = file;
-      }catch(e){
-        console.warn("compress failed:", e);
-        blob = file;                                   // فشل الضغط → نجرّب رفع الأصل إن كان حجمه مقبولاً
+        if(blob.size <= MAX_BLOB_BYTES) break;        // الحجم مقبول
       }
       setUpBar(null);
+      if(!blob) blob = file;                          // نجرّب الأصل فقط إن كان صغيراً (يُفحص بالأسفل)
     }
-    if(blob.size > limit) throw new Error("toobig");
+    if(blob.size > MAX_BLOB_BYTES) throw tooBig();
     if(!blob.type || blob === file) blob = new Blob([blob], {type: guessMime(file)});
 
     $("upPublish").textContent = "جارٍ الرفع…";
-    setUpInfo("جارٍ الرفع (" + mbStr(blob.size) + ")… يرجى عدم إغلاق الصفحة");
+    setUpInfo("جارٍ التجهيز (" + (blob.size/1024).toFixed(0) + "KB)…");
     const video = await fileToDataURL(blob);
-    if(video.length > 7.5*1048576) throw Object.assign(new Error("حجم الفيديو بعد التحويل كبير (" + (video.length/1048576).toFixed(1) + "MB)"), {code:"TOO_BIG"});
-    setUpInfo("جارٍ الحفظ في قاعدة البيانات…");
+    if(video.length > MAX_B64_BYTES) throw tooBig();   // فحص نهائي دقيق للنص الذي سيُرسل فعلاً
+    setUpInfo("جارٍ الحفظ في قاعدة البيانات (" + (video.length/1024).toFixed(0) + "KB)…");
     await ref.set({                                  // مسار واحد: shorts.push()
       uid: me.uid, name: me.name, photo: me.photo || null, text, video,
       ts: firebase.database.ServerValue.TIMESTAMP,
@@ -1641,11 +1652,11 @@ $("upPublish").onclick = async ()=>{
   }catch(err){
     console.error(err);
     const code = (err && err.code) || "", msg = (err && err.message) || String(err);
-    let t = err && err.message === "toobig"
-      ? "تعذّر تصغير الفيديو إلى الحجم المسموح على متصفحك — جرّب فيديو أقصر أو استخدم Chrome"
-      : "فشل النشر" + (code ? " [" + code + "]" : "") + ": " + msg;
+    let t = (code === "TOO_BIG" || code === "READ_FAILED") ? msg
+          : "فشل النشر" + (code ? " [" + code + "]" : "") + ": " + msg;
     if(/permission/i.test(code + msg)) t += "\nالسبب: قواعد Firebase لا تسمح بالكتابة في مسار shorts — انشر القواعد الموجودة أعلى الكود (Rules ← Publish).";
     $("upErr").style.whiteSpace = "pre-line"; $("upErr").textContent = t;
+    if(code === "TOO_BIG") toast("الفيديو كبير — اختر فيديو أقصر أو أصغر");
     $("upPublish").textContent = "إعادة المحاولة"; $("upPublish").disabled = false; setUpInfo(""); setUpBar(null);
   }finally{
     upBusy = false; $("upCancel").disabled = false;
