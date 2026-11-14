@@ -21,6 +21,7 @@
   --neon1:#7c5cff; --neon2:#22d3ee; --neon3:#ff4fd8;
   --danger:#ff5d7a;
   --radius:20px;
+  --hdrH:64px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -43,6 +44,7 @@ body::before{
    radial-gradient(1px 1px at 80px 200px,#b8c4ff,transparent);
   background-size:240px 240px;
 }
+body.shorts-on{overflow:hidden}
 button,input,textarea{font-family:inherit;font-size:16px;color:var(--text)}
 button{cursor:pointer;border:none;background:none}
 .hidden{display:none!important}
@@ -251,6 +253,120 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
 .pf-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 .btn-ghost.on{color:var(--neon2);border-color:rgba(34,211,238,.55);box-shadow:0 0 12px rgba(34,211,238,.25)}
 .post-head.clk{cursor:pointer}
+
+/* ═══════════════════════════════════════════════
+   🎬 شورتز (Shorts)
+   ═══════════════════════════════════════════════ */
+#shortsStage{
+  position:fixed;left:0;right:0;top:var(--hdrH);bottom:0;z-index:10;
+  background:#05061a;
+}
+#shorts{
+  height:100%;overflow-y:scroll;
+  scroll-snap-type:y mandatory;
+  overscroll-behavior:contain;overflow-anchor:none;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;
+}
+#shorts::-webkit-scrollbar{display:none}
+.short{
+  height:100%;display:flex;justify-content:center;background:#05061a;
+  scroll-snap-align:start;scroll-snap-stop:always;
+}
+.short-inner{position:relative;width:100%;max-width:480px;height:100%;background:#000;overflow:hidden}
+@media (min-width:700px){
+  .short-inner{border-inline:1px solid var(--border);box-shadow:0 0 70px rgba(124,92,255,.28)}
+}
+.short-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0}
+.short-tap{position:absolute;inset:0;z-index:1;cursor:pointer}
+.short-shade{
+  position:absolute;left:0;right:0;bottom:0;height:58%;z-index:2;pointer-events:none;
+  background:linear-gradient(to top,rgba(5,6,26,.95),rgba(8,9,32,.6) 45%,transparent);
+}
+.short-prog{position:absolute;top:0;left:0;right:0;height:3px;background:rgba(255,255,255,.14);z-index:4}
+.short-prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--neon2),var(--neon3));box-shadow:0 0 10px rgba(34,211,238,.7)}
+.short-spin{
+  position:absolute;top:50%;left:50%;width:44px;height:44px;margin:-22px 0 0 -22px;z-index:2;pointer-events:none;
+  border:3px solid rgba(255,255,255,.18);border-top-color:var(--neon2);border-radius:50%;animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.short-msg{
+  position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);z-index:2;pointer-events:none;
+  text-align:center;color:var(--muted);padding:0 24px;line-height:1.8;font-size:14px;
+}
+.short-pause{
+  position:absolute;top:50%;left:50%;width:84px;height:84px;margin:-42px 0 0 -42px;z-index:2;pointer-events:none;
+  display:flex;align-items:center;justify-content:center;font-size:34px;border-radius:50%;
+  background:rgba(10,11,30,.45);border:1px solid var(--border);backdrop-filter:blur(10px);
+  opacity:0;transform:scale(.7);transition:.2s;
+}
+.short-pause.show{opacity:1;transform:none}
+.short-heart{
+  position:absolute;top:50%;left:50%;margin:-48px 0 0 -48px;z-index:3;pointer-events:none;font-size:96px;line-height:1;
+  opacity:0;filter:drop-shadow(0 0 24px rgba(255,79,216,.9));
+}
+.short-heart.pop{animation:heartpop .8s ease}
+@keyframes heartpop{0%{opacity:0;transform:scale(.3)}25%{opacity:1;transform:scale(1.15)}60%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.3) translateY(-30px)}}
+
+.short-side{
+  position:absolute;inset-inline-end:10px;bottom:calc(96px + env(safe-area-inset-bottom));z-index:4;
+  display:flex;flex-direction:column;align-items:center;gap:16px;
+}
+.s-avatar{position:relative;cursor:pointer;margin-bottom:4px}
+.s-avatar .avatar{width:50px;height:50px;font-size:21px;border:2px solid #fff;box-shadow:0 0 18px rgba(124,92,255,.7)}
+.s-act{display:flex;flex-direction:column;align-items:center;gap:4px;color:#fff;font-weight:700;font-size:13px;text-shadow:0 1px 6px rgba(0,0,0,.7)}
+.s-act .ic{
+  width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;
+  background:rgba(255,255,255,.10);border:1px solid var(--border);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 4px 18px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.1);transition:.2s;
+}
+.s-act:active .ic{transform:scale(.88)}
+.s-act.liked .ic{background:rgba(255,79,216,.22);border-color:rgba(255,79,216,.6);box-shadow:0 0 22px rgba(255,79,216,.55)}
+.short-info{
+  position:absolute;inset-inline-start:14px;inset-inline-end:76px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:4;
+  text-shadow:0 1px 8px rgba(0,0,0,.8);
+}
+.short-info .who{display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;width:fit-content;max-width:100%}
+.short-info .who .name{font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.short-info .who .tm{font-size:12px;color:#c6cbf0;flex-shrink:0}
+.short-desc{font-size:14px;line-height:1.7;word-break:break-word;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+.short-desc.open{-webkit-line-clamp:unset;display:block;max-height:32vh;overflow-y:auto}
+
+.s-top{position:absolute;top:12px;z-index:6}
+#shortAddBtn{inset-inline-start:12px;padding:10px 16px;font-weight:700;font-size:14px;border-radius:999px;color:#fff;
+  background:rgba(124,92,255,.35);border:1px solid rgba(124,92,255,.7);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 0 20px rgba(124,92,255,.5);transition:.2s}
+#shortAddBtn:hover{background:rgba(124,92,255,.5)}
+#shortMute{inset-inline-end:12px;background:rgba(10,11,30,.5);backdrop-filter:blur(14px)}
+#shortsEmpty{position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);padding:0 24px;line-height:1.9}
+
+/* النوافذ السفلية (تعليقات / رفع) */
+.sheet-back{
+  position:fixed;inset:0;z-index:70;background:rgba(3,4,16,.62);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  display:flex;align-items:flex-end;justify-content:center;opacity:0;visibility:hidden;transition:.25s;
+}
+.sheet-back.open{opacity:1;visibility:visible}
+.sheet{
+  width:100%;max-width:560px;max-height:82vh;display:flex;flex-direction:column;gap:12px;
+  border-radius:26px 26px 0 0;background:rgba(14,16,44,.94);
+  transform:translateY(100%);transition:transform .3s ease;
+  padding:14px 14px calc(14px + env(safe-area-inset-bottom));
+}
+.sheet-back.open .sheet{transform:none}
+.sheet-grip{width:44px;height:4px;border-radius:4px;background:rgba(255,255,255,.25);margin:0 auto -2px}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sheet-head b{font-size:17px}
+.sheet-list{flex:1;min-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px}
+.sheet-scroll{overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+#upPrev{width:100%;max-height:300px;border-radius:16px;background:#000;border:1px solid var(--border)}
+#upDesc{width:100%;min-height:84px;resize:none;padding:12px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--border);outline:none}
+#upDesc:focus{border-color:var(--neon1);box-shadow:0 0 16px rgba(124,92,255,.3)}
+.up-info{font-size:13px;color:var(--muted);text-align:center;min-height:18px}
+.up-row{display:flex;gap:10px}
+.up-row .btn{flex:1}
+.up-pick{display:flex;align-items:center;justify-content:center;gap:8px;padding:22px 14px;border-radius:18px;border:1.5px dashed rgba(34,211,238,.5);
+  background:rgba(34,211,238,.06);cursor:pointer;font-weight:700;transition:.2s}
+.up-pick:hover{background:rgba(34,211,238,.12);box-shadow:0 0 20px rgba(34,211,238,.25)}
 </style>
 </head>
 <body>
@@ -334,6 +450,16 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
       <div id="feedEmpty" class="empty">جارٍ التحميل…</div>
     </section>
 
+    <!-- 🎬 شورتز -->
+    <section id="viewShorts" class="view">
+      <div id="shortsStage">
+        <div id="shorts"></div>
+        <div id="shortsEmpty" class="empty">جارٍ التحميل…</div>
+        <button id="shortAddBtn" class="s-top" type="button">🎬 نشر شورت</button>
+        <button id="shortMute" class="s-top icon-btn" type="button" aria-label="الصوت">🔊</button>
+      </div>
+    </section>
+
     <!-- البحث -->
     <section id="viewSearch" class="view">
       <div class="search-bar glass">
@@ -375,6 +501,7 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
 
   <nav class="bottom glass">
     <button data-view="viewFeed" class="active"><i>🌌</i>الرئيسية</button>
+    <button data-view="viewShorts"><i>🎬</i>شورتز</button>
     <button data-view="viewSearch"><i>🔍</i>بحث</button>
     <button data-view="viewChats"><i>💬</i>المحادثات</button>
     <button data-view="viewMe"><i>👤</i>حسابي</button>
@@ -416,6 +543,46 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
   </form>
 </div>
 
+<!-- ═══════════ 🎬 نافذة تعليقات الشورتز ═══════════ -->
+<div id="scSheet" class="sheet-back">
+  <div class="sheet glass">
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <b id="scTitle">التعليقات</b>
+      <button id="scClose" class="icon-btn" type="button" aria-label="إغلاق">✕</button>
+    </div>
+    <div id="scList" class="sheet-list"></div>
+    <div id="scEmpty" class="empty hidden" style="padding:10px">لا توجد تعليقات بعد — كن أول من يعلّق ✨</div>
+    <form id="scForm" class="comment-form">
+      <input id="scInput" class="field" placeholder="اكتب تعليقاً…" maxlength="400" autocomplete="off">
+      <button class="btn" type="submit">إرسال</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ 🎬 نافذة رفع شورت ═══════════ -->
+<div id="upSheet" class="sheet-back">
+  <div class="sheet glass">
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <b>🎬 نشر شورت جديد</b>
+      <button id="upClose" class="icon-btn" type="button" aria-label="إغلاق">✕</button>
+    </div>
+    <div class="sheet-scroll">
+      <label id="upPick" class="up-pick" for="upFile">📁 اختر فيديو من جهازك</label>
+      <input id="upFile" type="file" accept="video/*" hidden>
+      <video id="upPrev" class="hidden" controls playsinline muted></video>
+      <div id="upInfo" class="up-info"></div>
+      <textarea id="upDesc" placeholder="اكتب وصفاً للمقطع…" maxlength="300"></textarea>
+      <div id="upErr" class="err"></div>
+      <div class="up-row">
+        <button id="upPublish" class="btn" type="button" disabled>نشر</button>
+        <button id="upCancel" class="btn-ghost" type="button">إلغاء</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ═══════════════════════════════════════════════════════════
    1) إعدادات Firebase (مربوطة بمشروع mus2-e4917)
@@ -434,10 +601,13 @@ const firebaseConfig = {
 
 /*
   قواعد Realtime Database (الصقها في Rules ثم Publish):
+  ⚠️ جديد: أُضيف مساري "shorts" و "shortVideos" — لازم تنشر القواعد قبل رفع أي شورت.
   {
     "rules": {
       "users":    { ".read": "auth != null", "$uid": { ".write": "auth != null && auth.uid === $uid" } },
       "posts":    { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
+      "shorts":   { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
+      "shortVideos": { "$id": { ".read": "auth != null", ".write": "auth != null" } },
       "comments": { ".read": "auth != null", ".write": "auth != null" },
       "chats":    { "$chatId": {
           ".read":  "auth != null && $chatId.contains(auth.uid)",
@@ -464,6 +634,15 @@ let friendsRef = null, userChatsRef = null;
 let usersCache = {}, postsCache = {}, friendsSet = {}, userChatsCache = {};
 let searchTab = "all", searchTimer = null;
 
+/* ── متغيرات الشورتز ── */
+const MAX_SHORT_MB  = 6;       // أقصى حجم للفيديو (ميجابايت)
+const MAX_SHORT_SEC = 60;      // أقصى مدة (ثانية)
+const SHORTS_LIMIT  = 12;      // عدد المقاطع المحمّلة (الأحدث)
+let shortsRef = null, shortsLoaded = false, shortsMuted = false, currentShort = null;
+const shortEls = {}, shortsCache = {};
+let scId = null, scRef = null;          // نافذة تعليقات الشورت
+let upFile = null, upURL = null, upBusy = false;
+
 /* ───────── أدوات مساعدة ───────── */
 function toast(msg, ok){
   const t = document.createElement("div");
@@ -475,6 +654,12 @@ function initial(name){ return (name||"؟").trim().charAt(0).toUpperCase(); }
 function fmtTime(ts){
   if(!ts) return "";
   return new Date(ts).toLocaleString("ar", {hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});
+}
+function fmtCount(n){
+  n = n || 0;
+  if(n >= 1e6) return (n/1e6).toFixed(1).replace(/\.0$/,"") + "M";
+  if(n >= 1e3) return (n/1e3).toFixed(1).replace(/\.0$/,"") + "K";
+  return String(n);
 }
 function el(tag, cls, text){
   const e = document.createElement(tag);
@@ -701,10 +886,18 @@ function renderMe(){
 }
 
 /* ───────── التنقل بين الأقسام ───────── */
+function measureHeader(){
+  const h = document.querySelector("header.top").offsetHeight;
+  if(h) document.documentElement.style.setProperty("--hdrH", h + "px");
+}
+window.addEventListener("resize", measureHeader);
 function showView(id){
   document.querySelectorAll("nav.bottom button").forEach(x=>x.classList.toggle("active", x.dataset.view===id));
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id===id));
   window.scrollTo({top:0});
+  document.body.classList.toggle("shorts-on", id==="viewShorts");
+  if(id==="viewShorts") measureHeader();
+  else { pauseAllShorts(); closeShortComments(); }
   if(id==="viewSearch"){ runSearch(); setTimeout(()=>$("searchInput").focus(), 60); }
 }
 document.querySelectorAll("nav.bottom button").forEach(b=>{ b.onclick = ()=>showView(b.dataset.view); });
@@ -717,6 +910,8 @@ function startApp(){
   stopApp();
   listenFeed();
   listenUsers();
+  listenShorts();
+  measureHeader();
 }
 function stopApp(){
   if(feedRef){ feedRef.off(); feedRef = null; }
@@ -727,6 +922,7 @@ function stopApp(){
   Object.values(commentListeners).forEach(r=>r.off());
   for(const k in commentListeners) delete commentListeners[k];
   closeChat(); closeProfile(); usersState = "loading";
+  stopShorts();
   $("feed").innerHTML = "";
   ["chatRecent","chatFriends","chatOthers","searchResults"].forEach(i=>$(i).innerHTML = "");
   $("searchInput").value = ""; $("chatFilter").value = "";
@@ -836,6 +1032,17 @@ function listenFeed(){
   }).catch(()=>{});
 }
 
+/* صف تعليق (مشترك بين المنشورات والشورتز) */
+function commentRow(c){
+  const row = el("div","comment");
+  row.appendChild(avatarFor(c.uid, c.name, "sm"));
+  const b = el("div","bubble");
+  b.appendChild(nameFor(c.uid, c.name, "b"));
+  b.appendChild(el("p",null,c.text));
+  row.appendChild(b);
+  return row;
+}
+
 function buildPost(id, p){
   const card = el("article","post glass");
 
@@ -894,14 +1101,7 @@ function buildPost(id, p){
         const ref = db.ref("comments/"+id).orderByChild("ts");
         commentListeners[id] = ref;
         ref.on("child_added", s=>{
-          const c = s.val();
-          const row = el("div","comment");
-          row.appendChild(avatarFor(c.uid, c.name, "sm"));
-          const b = el("div","bubble");
-          b.appendChild(nameFor(c.uid, c.name, "b"));
-          b.appendChild(el("p",null,c.text));
-          row.appendChild(b);
-          cList.appendChild(row);
+          cList.appendChild(commentRow(s.val()));
           cList.scrollTop = cList.scrollHeight;
         });
       }
@@ -937,7 +1137,378 @@ function updatePost(id, p){
 }
 
 /* ═══════════════════════════════════════════════════════════
-   4) البحث الشامل (أشخاص + منشورات)
+   🎬 4) شورتز (فيديوهات قصيرة)
+   ───────────────────────────────────────────────────────────
+   البنية في قاعدة البيانات:
+     shorts/{id}      → بيانات خفيفة (الناشر، الوصف، الوقت، الإعجابات، عدد التعليقات)
+     shortVideos/{id} → {data: "data:video/mp4;base64,..."}  (يُحمَّل عند الحاجة فقط)
+   فصل الفيديو عن البيانات يمنع تحميل عشرات الميجابايتات عند فتح القسم.
+   ═══════════════════════════════════════════════════════════ */
+
+/* مراقب التشغيل: الفيديو الظاهر (≥60%) يعمل والباقي يتوقف */
+const playObs = new IntersectionObserver(entries=>{
+  entries.forEach(en=>{
+    const x = shortEls[en.target.dataset.id];
+    if(!x) return;
+    if(en.isIntersecting && en.intersectionRatio >= 0.6){
+      currentShort = x.id; x.active = true; playShort(x);
+    }else{
+      x.active = false;
+      x.video.pause();
+      if(!en.isIntersecting){                 // غادر الشاشة تماماً → يعود للبداية
+        try{ x.video.currentTime = 0; }catch{}
+        x.userPaused = false; x.pauseIc.classList.remove("show");
+      }
+    }
+  });
+},{root:$("shorts"), threshold:[0, .6, 1]});
+
+/* مراقب التحميل المسبق: يجلب الفيديو الحالي والتالي/السابق */
+const loadObs = new IntersectionObserver(entries=>{
+  entries.forEach(en=>{ if(en.isIntersecting){ const x = shortEls[en.target.dataset.id]; if(x) loadMedia(x); } });
+},{root:$("shorts"), rootMargin:"100% 0px 100% 0px"});
+
+function shortsViewActive(){
+  return $("viewShorts").classList.contains("active") && !document.hidden
+      && !$("chatPanel").classList.contains("open") && !$("profilePanel").classList.contains("open");
+}
+
+function applyMuteUI(){
+  $("shortMute").textContent = shortsMuted ? "🔇" : "🔊";
+  for(const id in shortEls) shortEls[id].video.muted = shortsMuted;
+}
+$("shortMute").onclick = ()=>{
+  shortsMuted = !shortsMuted; applyMuteUI();
+  const x = shortEls[currentShort];
+  if(x && x.active && x.video.paused && !x.userPaused) tryPlay(x);
+};
+
+function tryPlay(x){
+  if(!x || !x.ready || !shortsViewActive()) return;
+  x.video.muted = shortsMuted;
+  const p = x.video.play();
+  if(p && p.catch) p.catch(()=>{
+    // المتصفح منع التشغيل بالصوت → نشغّله صامتاً ويستطيع المستخدم تفعيل الصوت
+    if(!shortsMuted){ shortsMuted = true; applyMuteUI(); }
+    x.video.muted = true;
+    x.video.play().catch(()=>{});
+  });
+}
+function playShort(x){
+  if(!x.ready){ loadMedia(x); return; }   // سيُشغَّل تلقائياً بعد التحميل
+  if(!x.userPaused) tryPlay(x);
+}
+function pauseAllShorts(){ for(const id in shortEls) shortEls[id].video.pause(); }
+function resumeShort(){
+  const x = shortEls[currentShort];
+  if(x && x.active && !x.userPaused) tryPlay(x);
+}
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) pauseAllShorts(); else resumeShort(); });
+
+/* تحميل ملف الفيديو (Base64 → Blob URL لتشغيل سلس واستهلاك أقل للذاكرة) */
+async function loadMedia(x){
+  if(!x || x.ready || x.loading) return;
+  x.loading = true; x.spin.classList.remove("hidden"); x.msg.classList.add("hidden");
+  try{
+    const snap = await db.ref("shortVideos/"+x.id).once("value");
+    const d = snap.val(), data = d && d.data;
+    if(!data) throw new Error("no-data");
+    let url = data;
+    try{ const blob = await (await fetch(data)).blob(); url = URL.createObjectURL(blob); x.blobUrl = url; }catch{}
+    x.video.src = url; x.ready = true;
+    if(x.active) playShort(x);
+  }catch(err){
+    console.warn("short load:", err);
+    x.msg.textContent = "تعذّر تحميل الفيديو — اضغط لإعادة المحاولة";
+    x.msg.classList.remove("hidden");
+  }finally{
+    x.loading = false;
+    if(!x.ready) x.spin.classList.add("hidden");
+  }
+}
+
+function listenShorts(){
+  shortsLoaded = false;
+  shortsRef = db.ref("shorts").orderByChild("ts").limitToLast(SHORTS_LIMIT);
+  const box = $("shorts");
+  shortsRef.on("child_added", snap=>{
+    const s = snap.val(); if(!s || shortEls[snap.key]) return;
+    shortsCache[snap.key] = s;
+    $("shortsEmpty").classList.add("hidden");
+    const item = buildShort(snap.key, s);
+    box.prepend(item);
+    // نحافظ على الفيديو الذي يشاهده المستخدم عند وصول مقطع جديد في الأعلى
+    if(shortsLoaded) box.scrollTop += box.clientHeight;
+    playObs.observe(item); loadObs.observe(item);
+  }, err=>{
+    console.error(err);
+    $("shortsEmpty").textContent = "تعذّر تحميل الشورتز (تحقق من القواعد)";
+    $("shortsEmpty").classList.remove("hidden");
+  });
+  shortsRef.on("child_changed", snap=>{ shortsCache[snap.key] = snap.val(); updateShort(snap.key, snap.val()); });
+  shortsRef.on("child_removed", snap=>{
+    delete shortsCache[snap.key];
+    removeShortEl(snap.key);
+    if(!Object.keys(shortEls).length){
+      $("shortsEmpty").textContent = "لا توجد شورتز بعد. انشر أول مقطع 🎬";
+      $("shortsEmpty").classList.remove("hidden");
+    }
+  });
+  shortsRef.once("value").then(s=>{
+    shortsLoaded = true;
+    if(!s.exists()){
+      $("shortsEmpty").textContent = "لا توجد شورتز بعد. انشر أول مقطع 🎬";
+      $("shortsEmpty").classList.remove("hidden");
+    }
+  }).catch(()=>{});
+}
+
+function removeShortEl(id){
+  const x = shortEls[id]; if(!x) return;
+  playObs.unobserve(x.item); loadObs.unobserve(x.item);
+  x.video.pause(); x.video.removeAttribute("src"); x.video.load();
+  if(x.blobUrl) URL.revokeObjectURL(x.blobUrl);
+  x.item.remove(); delete shortEls[id];
+  if(currentShort === id) currentShort = null;
+}
+function stopShorts(){
+  if(shortsRef){ shortsRef.off(); shortsRef = null; }
+  closeShortComments(); closeUpload(true);
+  Object.keys(shortEls).forEach(removeShortEl);
+  for(const k in shortsCache) delete shortsCache[k];
+  $("shorts").innerHTML = ""; currentShort = null; shortsLoaded = false;
+  $("shortsEmpty").textContent = "جارٍ التحميل…";
+  $("shortsEmpty").classList.remove("hidden");
+  document.body.classList.remove("shorts-on");
+}
+
+function buildShort(id, s){
+  const item = el("article","short"); item.dataset.id = id;
+  const inner = el("div","short-inner");
+
+  const video = document.createElement("video");
+  video.className = "short-video"; video.loop = true; video.muted = shortsMuted;
+  video.playsInline = true; video.setAttribute("playsinline",""); video.setAttribute("webkit-playsinline","");
+  video.preload = "auto";
+  const tap   = el("div","short-tap");
+  const shade = el("div","short-shade");
+  const spin  = el("div","short-spin hidden");
+  const msg   = el("div","short-msg hidden");
+  const pauseIc = el("div","short-pause","▶");
+  const heart = el("div","short-heart","❤️");
+  const prog  = el("div","short-prog"), bar = el("i"); prog.appendChild(bar);
+
+  /* الأزرار الجانبية */
+  const side = el("div","short-side");
+  const avWrap = el("div","s-avatar"); avWrap.appendChild(avatarFor(s.uid, s.name));
+  avWrap.onclick = ()=>{ if(s.uid === me.uid) showView("viewMe"); else openProfile(s.uid); };
+  const likeBtn = el("button","s-act"); likeBtn.type = "button"; likeBtn.setAttribute("aria-label","إعجاب");
+  const likeIc = el("span","ic","🤍"), likeCt = el("span","ct","0"); likeBtn.append(likeIc, likeCt);
+  const cmtBtn = el("button","s-act"); cmtBtn.type = "button"; cmtBtn.setAttribute("aria-label","تعليقات");
+  const cmtIc = el("span","ic","💬"), cmtCt = el("span","ct","0"); cmtBtn.append(cmtIc, cmtCt);
+  side.append(avWrap, likeBtn, cmtBtn);
+
+  /* معلومات الناشر + الوصف */
+  const info = el("div","short-info");
+  const who = el("div","who");
+  who.appendChild(nameFor(s.uid, s.name, "span", "name"));
+  who.appendChild(el("span","tm", fmtTime(s.ts)));
+  who.onclick = avWrap.onclick;
+  info.appendChild(who);
+  if(s.text){
+    const d = el("div","short-desc", s.text);
+    d.onclick = ()=>d.classList.toggle("open");
+    info.appendChild(d);
+  }
+
+  inner.append(video, tap, shade, spin, msg, pauseIc, heart, prog, side, info);
+  item.appendChild(inner);
+
+  const x = {id, item, video, spin, msg, pauseIc, heart, bar, likeBtn, likeIc, likeCt, cmtCt,
+             ready:false, loading:false, active:false, userPaused:false, blobUrl:null};
+  shortEls[id] = x;
+  updateShort(id, s);
+
+  /* أحداث الفيديو */
+  video.addEventListener("waiting", ()=>spin.classList.remove("hidden"));
+  video.addEventListener("playing", ()=>{ spin.classList.add("hidden"); pauseIc.classList.remove("show"); });
+  video.addEventListener("canplay", ()=>spin.classList.add("hidden"));
+  video.addEventListener("timeupdate", ()=>{ if(video.duration) bar.style.width = (video.currentTime / video.duration * 100) + "%"; });
+  video.addEventListener("loadedmetadata", ()=>{ video.style.objectFit = video.videoWidth > video.videoHeight ? "contain" : "cover"; });
+  video.addEventListener("error", ()=>{
+    if(!x.ready) return;
+    spin.classList.add("hidden"); msg.textContent = "تعذّر تشغيل هذا الفيديو على جهازك"; msg.classList.remove("hidden");
+  });
+
+  /* لمسة واحدة = إيقاف/تشغيل · لمستان = إعجاب */
+  let lastTap = 0, tapTimer = null;
+  tap.onclick = ()=>{
+    const now = Date.now();
+    if(now - lastTap < 300){
+      clearTimeout(tapTimer); lastTap = 0;
+      likeShort(id, true); burstHeart(x);
+    }else{
+      lastTap = now;
+      tapTimer = setTimeout(()=>togglePlay(x), 280);
+    }
+  };
+
+  likeBtn.onclick = ()=>likeShort(id, false);
+  cmtBtn.onclick  = ()=>openShortComments(id);
+  return item;
+}
+
+function togglePlay(x){
+  if(!x.ready){ x.loading = false; loadMedia(x); return; }   // إعادة المحاولة عند فشل التحميل
+  if(x.video.paused){ x.userPaused = false; x.pauseIc.classList.remove("show"); tryPlay(x); }
+  else{ x.userPaused = true; x.video.pause(); x.pauseIc.classList.add("show"); }
+}
+function burstHeart(x){
+  x.heart.classList.remove("pop"); void x.heart.offsetWidth; x.heart.classList.add("pop");
+}
+
+function likeShort(id, onlyAdd){
+  db.ref("shorts/"+id).transaction(cur=>{
+    if(cur === null) return cur;
+    cur.likes = cur.likes || {};
+    if(cur.likes[me.uid]){ if(onlyAdd) return cur; delete cur.likes[me.uid]; }
+    else cur.likes[me.uid] = true;
+    cur.likesCount = Object.keys(cur.likes).length;
+    return cur;
+  }, (err)=>{ if(err) toast("تعذّر تسجيل الإعجاب"); });
+}
+
+function updateShort(id, s){
+  const x = shortEls[id]; if(!x) return;
+  const likes = s.likes ? Object.keys(s.likes).length : 0;
+  const liked = !!(s.likes && me && s.likes[me.uid]);
+  x.likeIc.textContent = liked ? "❤️" : "🤍";
+  x.likeCt.textContent = fmtCount(likes);
+  x.likeBtn.classList.toggle("liked", liked);
+  x.cmtCt.textContent = fmtCount(s.commentsCount || 0);
+  if(scId === id) updateScTitle();
+}
+
+/* ── نافذة تعليقات الشورت ── */
+function updateScTitle(){
+  $("scTitle").textContent = "التعليقات (" + ((shortsCache[scId] || {}).commentsCount || 0) + ")";
+}
+function openShortComments(id){
+  closeShortComments();
+  scId = id; $("scList").innerHTML = ""; $("scEmpty").classList.add("hidden"); updateScTitle();
+  scRef = db.ref("comments/"+id).orderByChild("ts");
+  scRef.on("child_added", s=>{
+    const c = s.val(); if(!c) return;
+    $("scEmpty").classList.add("hidden");
+    const l = $("scList"); l.appendChild(commentRow(c)); l.scrollTop = l.scrollHeight;
+  }, err=>{ console.error(err); toast("تعذّر تحميل التعليقات"); });
+  scRef.once("value").then(s=>{ if(scId === id && !s.exists()) $("scEmpty").classList.remove("hidden"); }).catch(()=>{});
+  $("scSheet").classList.add("open");
+}
+function closeShortComments(){
+  if(scRef){ scRef.off(); scRef = null; }
+  scId = null; $("scSheet").classList.remove("open");
+}
+$("scClose").onclick = closeShortComments;
+$("scSheet").addEventListener("click", e=>{ if(e.target === $("scSheet")) closeShortComments(); });
+$("scForm").addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const text = $("scInput").value.trim(), id = scId;
+  if(!text || !id) return;
+  $("scInput").value = "";
+  try{
+    await db.ref("comments/"+id).push({
+      uid: me.uid, name: me.name, text,
+      ts: firebase.database.ServerValue.TIMESTAMP
+    });
+    db.ref("shorts/"+id+"/commentsCount").transaction(n=>(n||0)+1);
+  }catch{ toast("تعذّر إرسال التعليق"); }
+});
+
+/* ── رفع شورت جديد ── */
+function fileToDataURL(file){
+  return new Promise((res,rej)=>{
+    const r = new FileReader();
+    r.onerror = ()=>rej(new Error("read")); r.onload = ()=>res(r.result);
+    r.readAsDataURL(file);
+  });
+}
+function resetUpload(){
+  if(upURL){ URL.revokeObjectURL(upURL); upURL = null; }
+  upFile = null;
+  const v = $("upPrev"); v.pause(); v.removeAttribute("src"); v.load(); v.classList.add("hidden");
+  $("upPick").textContent = "📁 اختر فيديو من جهازك";
+  $("upInfo").textContent = ""; $("upErr").textContent = ""; $("upDesc").value = "";
+  $("upPublish").disabled = true; $("upPublish").textContent = "نشر";
+}
+function openUpload(){ resetUpload(); $("upSheet").classList.add("open"); }
+function closeUpload(force){
+  if(upBusy && !force) return;
+  $("upSheet").classList.remove("open"); resetUpload();
+}
+$("shortAddBtn").onclick = openUpload;
+$("upClose").onclick = ()=>closeUpload();
+$("upCancel").onclick = ()=>closeUpload();
+$("upSheet").addEventListener("click", e=>{ if(e.target === $("upSheet")) closeUpload(); });
+
+$("upFile").addEventListener("change", (e)=>{
+  const f = e.target.files[0]; e.target.value = "";
+  if(!f) return;
+  $("upErr").textContent = ""; $("upInfo").textContent = ""; $("upPublish").disabled = true;
+  if(!f.type.startsWith("video/")){ $("upErr").textContent = "اختر ملف فيديو فقط"; return; }
+  const mb = f.size / 1048576;
+  if(mb > MAX_SHORT_MB){
+    $("upErr").textContent = "حجم الفيديو " + mb.toFixed(1) + "MB يتجاوز الحد المسموح (" + MAX_SHORT_MB + "MB)";
+    return;
+  }
+  if(upURL) URL.revokeObjectURL(upURL);
+  upFile = f; upURL = URL.createObjectURL(f);
+  const v = $("upPrev"); v.src = upURL; v.classList.remove("hidden");
+  $("upPick").textContent = "🔄 تغيير الفيديو";
+  $("upInfo").textContent = "جارٍ فحص الفيديو…";
+  v.onloadedmetadata = ()=>{
+    if(v.duration > MAX_SHORT_SEC + 0.5){
+      $("upErr").textContent = "مدة الفيديو " + Math.round(v.duration) + " ثانية — الحد الأقصى " + MAX_SHORT_SEC + " ثانية";
+      $("upInfo").textContent = ""; upFile = null; return;
+    }
+    $("upInfo").textContent = "الحجم: " + mb.toFixed(1) + "MB · المدة: " + Math.round(v.duration) + " ث";
+    $("upPublish").disabled = false;
+  };
+  v.onerror = ()=>{
+    $("upErr").textContent = "تعذّر قراءة هذا الفيديو، جرّب صيغة MP4 أو WebM";
+    $("upInfo").textContent = ""; upFile = null;
+  };
+});
+
+$("upPublish").onclick = async ()=>{
+  if(!upFile || upBusy) return;
+  const text = $("upDesc").value.trim(), file = upFile;
+  upBusy = true; $("upPublish").disabled = true; $("upCancel").disabled = true; $("upErr").textContent = "";
+  $("upPublish").textContent = "جارٍ الرفع…"; $("upInfo").textContent = "يرجى الانتظار وعدم إغلاق الصفحة…";
+  const ref = db.ref("shorts").push(), id = ref.key;
+  try{
+    const data = await fileToDataURL(file);
+    await db.ref("shortVideos/"+id).set({data});                // 1) الفيديو أولاً
+    await ref.set({                                              // 2) ثم البيانات (فيظهر المقطع جاهزاً)
+      uid: me.uid, name: me.name, photo: me.photo || null, text,
+      ts: firebase.database.ServerValue.TIMESTAMP,
+      commentsCount: 0
+    });
+    upBusy = false; closeUpload(true);
+    toast("تم نشر الشورت ✓", true);
+    $("shorts").scrollTo({top:0, behavior:"smooth"});
+  }catch(err){
+    console.error(err);
+    db.ref("shortVideos/"+id).remove().catch(()=>{});
+    $("upErr").textContent = "تعذّر النشر — تأكد من نشر قواعد shorts و shortVideos في Firebase";
+    $("upPublish").textContent = "إعادة المحاولة"; $("upPublish").disabled = false; $("upInfo").textContent = "";
+  }finally{
+    upBusy = false; $("upCancel").disabled = false;
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════
+   5) البحث الشامل (أشخاص + منشورات)
    ═══════════════════════════════════════════════════════════ */
 const AR_MAP = {"أ":"ا","إ":"ا","آ":"ا","ٱ":"ا","ى":"ي","ة":"ه","ؤ":"و","ئ":"ي"};
 // تطبيع النص: يتجاهل التشكيل واختلاف الهمزات والتاء المربوطة وحالة الأحرف
@@ -1083,7 +1654,7 @@ document.querySelectorAll("#searchTabs button").forEach(b=>{
 });
 
 /* ═══════════════════════════════════════════════════════════
-   5) الأصدقاء والمحادثات الخاصة
+   6) الأصدقاء والمحادثات الخاصة
    ═══════════════════════════════════════════════════════════ */
 async function toggleFriend(uid, name, btn){
   const add = !friendsSet[uid];
@@ -1108,8 +1679,13 @@ function openProfile(uid){
   profileUid = uid; renderProfile();
   $("pfPosts").parentElement.scrollTop = 0;
   $("profilePanel").classList.add("open");
+  pauseAllShorts();
 }
-function closeProfile(){ profileUid = null; $("profilePanel").classList.remove("open"); }
+function closeProfile(){
+  const was = profileUid !== null;
+  profileUid = null; $("profilePanel").classList.remove("open");
+  if(was) resumeShort();
+}
 function renderProfile(){
   if(!profileUid) return;
   const u = usersCache[profileUid] || {}, nm = u.name || "مستخدم";
@@ -1203,6 +1779,7 @@ function openChat(otherUid, otherName){
   $("chatBody").innerHTML = "";
   updateChatFriendBtn();
   $("chatPanel").classList.add("open");
+  pauseAllShorts();
 
   chatRef = db.ref("chats/"+chatId+"/messages").orderByChild("ts").limitToLast(200);
   chatRef.on("child_added", snap=>{
@@ -1217,9 +1794,11 @@ function openChat(otherUid, otherName){
   setTimeout(()=>$("chatInput").focus(), 350);
 }
 function closeChat(){
+  const was = chatId !== null;
   if(chatRef){ chatRef.off(); chatRef = null; }
   chatId = null; chatOther = null;
   $("chatPanel").classList.remove("open");
+  if(was) resumeShort();
 }
 $("chatBack").onclick = closeChat;
 
