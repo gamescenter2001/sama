@@ -362,6 +362,9 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
 #upDesc{width:100%;min-height:84px;resize:none;padding:12px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--border);outline:none}
 #upDesc:focus{border-color:var(--neon1);box-shadow:0 0 16px rgba(124,92,255,.3)}
 .up-info{font-size:13px;color:var(--muted);text-align:center;min-height:18px}
+.up-ph{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 12px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--muted);font-size:13px;text-align:center;word-break:break-all}
+.up-bar{height:6px;border-radius:6px;background:rgba(255,255,255,.12);overflow:hidden}
+.up-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--neon2),var(--neon3));transition:width .2s}
 .up-row{display:flex;gap:10px}
 .up-row .btn{flex:1}
 .up-pick{display:flex;align-items:center;justify-content:center;gap:8px;padding:22px 14px;border-radius:18px;border:1.5px dashed rgba(34,211,238,.5);
@@ -572,7 +575,9 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
       <label id="upPick" class="up-pick" for="upFile">📁 اختر فيديو من جهازك</label>
       <input id="upFile" type="file" accept="video/*" hidden>
       <video id="upPrev" class="hidden" controls playsinline muted></video>
+      <div id="upPh" class="up-ph hidden"><div style="font-size:46px">🎞️</div><div id="upPhName"></div></div>
       <div id="upInfo" class="up-info"></div>
+      <div id="upBar" class="up-bar hidden"><i></i></div>
       <textarea id="upDesc" placeholder="اكتب وصفاً للمقطع…" maxlength="300"></textarea>
       <div id="upErr" class="err"></div>
       <div class="up-row">
@@ -635,7 +640,6 @@ let usersCache = {}, postsCache = {}, friendsSet = {}, userChatsCache = {};
 let searchTab = "all", searchTimer = null;
 
 /* ── متغيرات الشورتز ── */
-const MAX_SHORT_MB  = 6;       // أقصى حجم للفيديو (ميجابايت)
 const MAX_SHORT_SEC = 60;      // أقصى مدة (ثانية)
 const SHORTS_LIMIT  = 12;      // عدد المقاطع المحمّلة (الأحدث)
 let shortsRef = null, shortsLoaded = false, shortsMuted = false, currentShort = null;
@@ -1425,20 +1429,134 @@ $("scForm").addEventListener("submit", async (e)=>{
   }catch{ toast("تعذّر إرسال التعليق"); }
 });
 
-/* ── رفع شورت جديد ── */
-function fileToDataURL(file){
+/* ── رفع شورت جديد (يقبل أي فيديو + ضغط تلقائي) ── */
+const MAX_RAW_MB       = 500;  // أقصى حجم للملف المختار من الهاتف
+const COMPRESS_OVER_MB = 3;    // أي فيديو أكبر من هذا يُضغط تلقائياً قبل الرفع
+const MAX_FINAL_MB     = 8;    // أقصى حجم بعد المعالجة (قبل تحويله إلى Base64)
+let upMeta = {dur:0, playable:null};
+
+function guessMime(f){
+  if(f.type) return f.type;
+  const e = (f.name || "").split(".").pop().toLowerCase();
+  return ({mp4:"video/mp4", m4v:"video/mp4", mov:"video/quicktime", webm:"video/webm", "3gp":"video/3gpp", mkv:"video/x-matroska"})[e] || "video/mp4";
+}
+const mbStr = (b)=>(b/1048576).toFixed(1) + "MB";
+function setUpInfo(t){ $("upInfo").textContent = t; }
+function setUpBar(p){
+  const b = $("upBar");
+  if(p == null){ b.classList.add("hidden"); return; }
+  b.classList.remove("hidden"); b.firstElementChild.style.width = Math.round(p*100) + "%";
+}
+function fileToDataURL(blob){
   return new Promise((res,rej)=>{
     const r = new FileReader();
     r.onerror = ()=>rej(new Error("read")); r.onload = ()=>res(r.result);
-    r.readAsDataURL(file);
+    r.readAsDataURL(blob);
   });
 }
+
+/* ── ضغط الفيديو: تشغيله على canvas وتسجيله بـ MediaRecorder بدقة وبت‌ريت أقل ── */
+function pickRecorderMime(){
+  const c = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"];
+  return c.find(t=>window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
+}
+function compressVideo(file, o, onProg){
+  return new Promise((resolve, reject)=>{
+    if(!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return reject(new Error("no-mediarecorder"));
+    const url = URL.createObjectURL(file);
+    const v = document.createElement("video");
+    v.playsInline = true; v.setAttribute("playsinline",""); v.preload = "auto"; v.loop = false;
+    v.style.cssText = "position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none";
+    document.body.appendChild(v);
+    let ac = null, rec = null, timer = null, guard = null, done = false;
+    const chunks = [];
+    const cleanup = ()=>{
+      clearInterval(timer); clearTimeout(guard);
+      try{ if(ac) ac.close(); }catch{}
+      try{ v.pause(); v.removeAttribute("src"); v.load(); }catch{}
+      v.remove(); URL.revokeObjectURL(url);
+    };
+    const fail = (e)=>{
+      if(done) return; done = true;
+      try{ if(rec && rec.state !== "inactive") rec.stop(); }catch{}
+      cleanup(); reject(e instanceof Error ? e : new Error(String(e)));
+    };
+    v.onerror = ()=>fail(new Error("decode"));
+    v.onloadedmetadata = async ()=>{
+      try{
+        const vw = v.videoWidth, vh = v.videoHeight;
+        if(!vw || !vh) throw new Error("no-size");
+        const sc = Math.min(1, o.short / Math.min(vw, vh));
+        const w = Math.max(2, Math.round(vw*sc/2)*2), h = Math.max(2, Math.round(vh*sc/2)*2);
+        const dur = Math.min(isFinite(v.duration) && v.duration > 0 ? v.duration : o.maxSec, o.maxSec);
+
+        const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        const stream = canvas.captureStream(30);
+
+        /* الصوت: عبر AudioContext (بدون تشغيله في السماعات) */
+        let hasAudio = false;
+        try{
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if(AC){
+            ac = new AC(); if(ac.state === "suspended") await ac.resume().catch(()=>{});
+            const src = ac.createMediaElementSource(v), dest = ac.createMediaStreamDestination();
+            src.connect(dest);
+            dest.stream.getAudioTracks().forEach(t=>{ stream.addTrack(t); hasAudio = true; });
+          }
+        }catch(e){ hasAudio = false; }
+
+        const mime = pickRecorderMime();
+        const audioBps = hasAudio ? 64000 : 0;
+        const budget = o.targetMB * 1048576 * 8 * 0.85 / dur;            // بت/ثانية متاحة للحجم المستهدف
+        const vbps = Math.round(Math.max(150000, Math.min(2500000, budget - audioBps)));
+        const opts = {videoBitsPerSecond: vbps};
+        if(mime) opts.mimeType = mime;
+        if(hasAudio) opts.audioBitsPerSecond = audioBps;
+        rec = new MediaRecorder(stream, opts);
+        rec.ondataavailable = (e)=>{ if(e.data && e.data.size) chunks.push(e.data); };
+        rec.onerror = ()=>fail(new Error("recorder"));
+        rec.onstop = ()=>{
+          if(done) return; done = true;
+          const type = (rec.mimeType || mime || "video/webm").split(";")[0];
+          const blob = new Blob(chunks, {type});
+          cleanup();
+          if(!blob.size) reject(new Error("empty")); else resolve(blob);
+        };
+
+        const finish = ()=>{ clearInterval(timer); if(rec.state !== "inactive") rec.stop(); };
+        v.onended = finish;
+
+        v.currentTime = 0;
+        ctx.fillStyle = "#000"; ctx.fillRect(0,0,w,h);
+        rec.start(500);
+        try{ v.muted = false; await v.play(); }
+        catch{ v.muted = true; await v.play(); }       // إن منع المتصفح الصوت نكمل بدونه
+
+        timer = setInterval(()=>{
+          if(v.readyState >= 2) ctx.drawImage(v, 0, 0, w, h);
+          const t = v.currentTime;
+          if(onProg) onProg(Math.min(1, t / dur));
+          if(t >= dur - 0.05) finish();
+        }, 33);
+        guard = setTimeout(()=>fail(new Error("timeout")), (dur + 25) * 1000);
+      }catch(e){ fail(e); }
+    };
+    v.src = url;
+  });
+}
+
+/* ── واجهة نافذة الرفع ── */
 function resetUpload(){
   if(upURL){ URL.revokeObjectURL(upURL); upURL = null; }
-  upFile = null;
-  const v = $("upPrev"); v.pause(); v.removeAttribute("src"); v.load(); v.classList.add("hidden");
+  upFile = null; upMeta = {dur:0, playable:null};
+  const v = $("upPrev");
+  v.onloadedmetadata = null; v.onerror = null;
+  try{ v.pause(); }catch{}
+  v.removeAttribute("src"); v.load(); v.classList.add("hidden");
+  $("upPh").classList.add("hidden");
   $("upPick").textContent = "📁 اختر فيديو من جهازك";
-  $("upInfo").textContent = ""; $("upErr").textContent = ""; $("upDesc").value = "";
+  setUpInfo(""); setUpBar(null); $("upErr").textContent = ""; $("upDesc").value = "";
   $("upPublish").disabled = true; $("upPublish").textContent = "نشر";
 }
 function openUpload(){ resetUpload(); $("upSheet").classList.add("open"); }
@@ -1454,40 +1572,68 @@ $("upSheet").addEventListener("click", e=>{ if(e.target === $("upSheet")) closeU
 $("upFile").addEventListener("change", (e)=>{
   const f = e.target.files[0]; e.target.value = "";
   if(!f) return;
-  $("upErr").textContent = ""; $("upInfo").textContent = ""; $("upPublish").disabled = true;
-  if(!f.type.startsWith("video/")){ $("upErr").textContent = "اختر ملف فيديو فقط"; return; }
-  const mb = f.size / 1048576;
-  if(mb > MAX_SHORT_MB){
-    $("upErr").textContent = "حجم الفيديو " + mb.toFixed(1) + "MB يتجاوز الحد المسموح (" + MAX_SHORT_MB + "MB)";
-    return;
+  $("upErr").textContent = "";
+  if(f.size > MAX_RAW_MB * 1048576){
+    $("upErr").textContent = "الملف كبير جداً (" + mbStr(f.size) + ") — الحد " + MAX_RAW_MB + "MB"; return;
   }
   if(upURL) URL.revokeObjectURL(upURL);
-  upFile = f; upURL = URL.createObjectURL(f);
-  const v = $("upPrev"); v.src = upURL; v.classList.remove("hidden");
+  upFile = f; upMeta = {dur:0, playable:null};
+  upURL = URL.createObjectURL(f);                       // معاينة فورية بدون قراءة الملف في الذاكرة
+  const v = $("upPrev");
+  v.classList.remove("hidden"); $("upPh").classList.add("hidden");
   $("upPick").textContent = "🔄 تغيير الفيديو";
-  $("upInfo").textContent = "جارٍ فحص الفيديو…";
+  const base = (f.name || "فيديو") + " · " + mbStr(f.size);
+  setUpInfo(base);
+  $("upPublish").disabled = false;                      // زر النشر يعمل فور اختيار الملف
+  $("upPublish").textContent = "نشر";
   v.onloadedmetadata = ()=>{
-    if(v.duration > MAX_SHORT_SEC + 0.5){
-      $("upErr").textContent = "مدة الفيديو " + Math.round(v.duration) + " ثانية — الحد الأقصى " + MAX_SHORT_SEC + " ثانية";
-      $("upInfo").textContent = ""; upFile = null; return;
-    }
-    $("upInfo").textContent = "الحجم: " + mb.toFixed(1) + "MB · المدة: " + Math.round(v.duration) + " ث";
-    $("upPublish").disabled = false;
+    upMeta.playable = true; upMeta.dur = v.duration || 0;
+    let t = base + " · " + Math.round(upMeta.dur) + " ث";
+    if(upMeta.dur > MAX_SHORT_SEC) t += " — سيُقتطع أول " + MAX_SHORT_SEC + " ثانية";
+    else if(f.size > COMPRESS_OVER_MB * 1048576) t += " — سيُضغط تلقائياً قبل النشر";
+    setUpInfo(t);
   };
-  v.onerror = ()=>{
-    $("upErr").textContent = "تعذّر قراءة هذا الفيديو، جرّب صيغة MP4 أو WebM";
-    $("upInfo").textContent = ""; upFile = null;
+  v.onerror = ()=>{                                     // لا نمنع النشر: نعرض أيقونة بدل المعاينة
+    upMeta.playable = false;
+    v.classList.add("hidden");
+    $("upPhName").textContent = (f.name || "") + " · " + mbStr(f.size);
+    $("upPh").classList.remove("hidden");
+    setUpInfo("جاهز للرفع (تعذّر عرض معاينة هذا الفيديو في المتصفح)");
   };
+  v.src = upURL;
 });
 
 $("upPublish").onclick = async ()=>{
   if(!upFile || upBusy) return;
-  const text = $("upDesc").value.trim(), file = upFile;
+  const text = $("upDesc").value.trim(), file = upFile, limit = MAX_FINAL_MB * 1048576;
   upBusy = true; $("upPublish").disabled = true; $("upCancel").disabled = true; $("upErr").textContent = "";
-  $("upPublish").textContent = "جارٍ الرفع…"; $("upInfo").textContent = "يرجى الانتظار وعدم إغلاق الصفحة…";
+  $("upPublish").textContent = "جارٍ المعالجة…";
   const ref = db.ref("shorts").push(), id = ref.key;
   try{
-    const data = await fileToDataURL(file);
+    let blob = file;
+    const needCompress = file.size > COMPRESS_OVER_MB * 1048576 || upMeta.dur > MAX_SHORT_SEC;
+    if(needCompress && upMeta.playable !== false){
+      try{
+        const prog = (p)=>{ setUpBar(p); setUpInfo("جارٍ ضغط الفيديو… " + Math.round(p*100) + "% (ابقَ في هذه الصفحة)"); };
+        setUpInfo("جارٍ ضغط الفيديو… 0% (ابقَ في هذه الصفحة)"); setUpBar(0);
+        blob = await compressVideo(file, {short:480, targetMB:6.5, maxSec:MAX_SHORT_SEC}, prog);
+        if(blob.size > limit){                         // ما زال كبيراً → محاولة ثانية بدقة وجودة أقل
+          setUpInfo("إعادة الضغط بجودة أقل…"); setUpBar(0);
+          blob = await compressVideo(file, {short:360, targetMB:4, maxSec:MAX_SHORT_SEC}, prog);
+        }
+        if(blob.size >= file.size && file.size <= limit && !(upMeta.dur > MAX_SHORT_SEC)) blob = file;
+      }catch(e){
+        console.warn("compress failed:", e);
+        blob = file;                                   // فشل الضغط → نجرّب رفع الأصل إن كان حجمه مقبولاً
+      }
+      setUpBar(null);
+    }
+    if(blob.size > limit) throw new Error("toobig");
+    if(!blob.type || blob === file) blob = new Blob([blob], {type: guessMime(file)});
+
+    $("upPublish").textContent = "جارٍ الرفع…";
+    setUpInfo("جارٍ الرفع (" + mbStr(blob.size) + ")… يرجى عدم إغلاق الصفحة");
+    const data = await fileToDataURL(blob);
     await db.ref("shortVideos/"+id).set({data});                // 1) الفيديو أولاً
     await ref.set({                                              // 2) ثم البيانات (فيظهر المقطع جاهزاً)
       uid: me.uid, name: me.name, photo: me.photo || null, text,
@@ -1500,8 +1646,10 @@ $("upPublish").onclick = async ()=>{
   }catch(err){
     console.error(err);
     db.ref("shortVideos/"+id).remove().catch(()=>{});
-    $("upErr").textContent = "تعذّر النشر — تأكد من نشر قواعد shorts و shortVideos في Firebase";
-    $("upPublish").textContent = "إعادة المحاولة"; $("upPublish").disabled = false; $("upInfo").textContent = "";
+    $("upErr").textContent = err && err.message === "toobig"
+      ? "تعذّر تصغير الفيديو إلى الحجم المسموح على متصفحك — جرّب فيديو أقصر أو استخدم Chrome"
+      : "تعذّر النشر — تأكد من نشر قواعد shorts و shortVideos في Firebase";
+    $("upPublish").textContent = "إعادة المحاولة"; $("upPublish").disabled = false; setUpInfo(""); setUpBar(null);
   }finally{
     upBusy = false; $("upCancel").disabled = false;
   }
