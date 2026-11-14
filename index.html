@@ -638,12 +638,13 @@ const firebaseConfig = {
 
 /*
   قواعد Realtime Database (الصقها في Rules ثم Publish):
-  ⚠️ الشورتز في مسار "shorts" والإشعارات في "notifications" — لازم تنشر القواعد (Rules ← Publish) وإلا لن تعمل.
+  ⚠️ الشورتز: "shorts" (أجزاء الفيديو) + "shortsMeta" (بياناته) والإشعارات في "notifications" — لازم تنشر القواعد (Rules ← Publish) وإلا لن تعمل.
   {
     "rules": {
       "users":    { ".read": "auth != null", "$uid": { ".write": "auth != null && auth.uid === $uid" } },
       "posts":    { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
-      "shorts":   { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
+      "shortsMeta": { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
+      "shorts":   { "$id": { ".read": "auth != null", ".write": "auth != null" } },
       "comments": { ".read": "auth != null", ".write": "auth != null" },
       "notifications": { "$uid": {
           ".read": "auth != null && auth.uid === $uid",
@@ -677,8 +678,7 @@ let usersCache = {}, postsCache = {}, friendsSet = {}, userChatsCache = {};
 let searchTab = "all", searchTimer = null;
 
 /* ── متغيرات الشورتز ── */
-const MAX_SHORT_SEC = 10;      // أقصى مدة (ثانية) — يُقتطع ما زاد عنها
-const SHORTS_LIMIT  = 30;      // عدد المقاطع المحمّلة (الأحدث) — كل مقطع ≤ 220KB
+const SHORTS_LIMIT  = 30;      // عدد المقاطع المعروضة (الأحدث) — بياناتها خفيفة
 let shortsRef = null, shortsLoaded = false, shortsMuted = false, currentShort = null;
 const shortEls = {}, shortsCache = {};
 let scId = null, scRef = null;          // نافذة تعليقات الشورت
@@ -1190,9 +1190,10 @@ function updatePost(id, p){
 /* ═══════════════════════════════════════════════════════════
    🎬 4) شورتز (فيديوهات قصيرة)
    ───────────────────────────────────────────────────────────
-   البنية في قاعدة البيانات:
-     shorts/{id} → {uid, name, photo, text, ts, commentsCount, likes, video:"data:video/...;base64,..."}
-   مسار واحد فقط (shorts.push). ويُضغط الفيديو بقوة قبل الرفع ليبقى كل مقطع ≤ 220KB (Base64).
+   البنية في قاعدة البيانات (تقطيع تلقائي Chunking):
+     shorts/{id}/chunks/{00000..N} → أجزاء الفيديو Base64 (150KB لكل جزء)
+     shortsMeta/{id} → {uid, name, photo, text, ts, mime, size, chunkCount, commentsCount, likes}
+   القائمة تستمع إلى shortsMeta (خفيف)، وأجزاء الفيديو تُجلب وتُركَّب عند التشغيل فقط.
    ═══════════════════════════════════════════════════════════ */
 
 /* مراقب التشغيل: الفيديو الظاهر (≥60%) يعمل والباقي يتوقف */
@@ -1256,15 +1257,33 @@ function resumeShort(){
 document.addEventListener("visibilitychange", ()=>{ if(document.hidden) pauseAllShorts(); else resumeShort(); });
 
 /* تحميل ملف الفيديو (Base64 → Blob URL لتشغيل سلس واستهلاك أقل للذاكرة) */
+function b64ToBytes(b64){
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
 async function loadMedia(x){
   if(!x || x.ready || x.loading) return;
   x.loading = true; x.spin.classList.remove("hidden"); x.msg.classList.add("hidden");
+  x.msg.style.marginTop = "72px";
   try{
-    const data = (shortsCache[x.id] || {}).video;
-    if(!data) throw new Error("no-data");
-    let url = data;
-    try{ const blob = await (await fetch(data)).blob(); url = URL.createObjectURL(blob); x.blobUrl = url; }catch{}
-    x.video.src = url; x.ready = true;
+    const m = shortsCache[x.id] || {}, n = m.chunkCount || 0;
+    if(!n) throw new Error("no-data");
+    const parts = new Array(n); let next = 0, got = 0;
+    const worker = async ()=>{                       // جلب الأجزاء بالتوازي ثم تركيبها بالترتيب
+      while(next < n){
+        const i = next++;
+        const snap = await db.ref("shorts/"+x.id+"/chunks/"+pad5(i)).once("value");
+        const b64 = snap.val();
+        if(!b64) throw new Error("جزء ناقص رقم " + (i+1));
+        parts[i] = b64ToBytes(b64); got++;
+        if(n > 6){ x.msg.textContent = "جارٍ التحميل " + Math.round(got/n*100) + "%"; x.msg.classList.remove("hidden"); }
+      }
+    };
+    await Promise.all(Array.from({length:Math.min(4, n)}, worker));
+    x.msg.classList.add("hidden");
+    x.blobUrl = URL.createObjectURL(new Blob(parts, {type: m.mime || "video/mp4"}));
+    x.video.src = x.blobUrl; x.ready = true;
     if(x.active) playShort(x);
   }catch(err){
     console.warn("short load:", err);
@@ -1278,7 +1297,7 @@ async function loadMedia(x){
 
 function listenShorts(){
   shortsLoaded = false;
-  shortsRef = db.ref("shorts").orderByChild("ts").limitToLast(SHORTS_LIMIT);
+  shortsRef = db.ref("shortsMeta").orderByChild("ts").limitToLast(SHORTS_LIMIT);
   const box = $("shorts");
   shortsRef.on("child_added", snap=>{
     const s = snap.val(); if(!s || shortEls[snap.key]) return;
@@ -1421,7 +1440,7 @@ function likeShort(id, onlyAdd){
   const liked = !!(cur.likes && cur.likes[me.uid]);
   if(liked && onlyAdd) return;
   playSound(liked ? "click" : "like");
-  db.ref("shorts/"+id+"/likes/"+me.uid).set(liked ? null : true)   // يكتب مفتاحاً صغيراً فقط، لا الفيديو
+  db.ref("shortsMeta/"+id+"/likes/"+me.uid).set(liked ? null : true)   // يكتب مفتاحاً صغيراً فقط، لا الفيديو
     .then(()=>notifyLike("short", id, cur.uid, !liked))
     .catch(err=>{ console.error(err); toast("تعذّر تسجيل الإعجاب: " + (err.code || err.message)); });
 }
@@ -1469,142 +1488,53 @@ $("scForm").addEventListener("submit", async (e)=>{
       uid: me.uid, name: me.name, text,
       ts: firebase.database.ServerValue.TIMESTAMP
     });
-    db.ref("shorts/"+id+"/commentsCount").transaction(n=>(n||0)+1);
+    db.ref("shortsMeta/"+id+"/commentsCount").transaction(n=>(n||0)+1);
     notifyComment("short", id, (shortsCache[id]||{}).uid, text);
   }catch{ toast("تعذّر إرسال التعليق"); }
 });
 
-/* ── رفع شورت جديد (يقبل أي فيديو + ضغط تلقائي) ── */
-const MAX_RAW_MB       = 500;  // أقصى حجم للملف المختار من الهاتف
-const MAX_B64_KB       = 220;  // أقصى حجم للنص النهائي (Base64) المسموح حفظه — غيّره هنا فقط
-const MAX_B64_BYTES    = MAX_B64_KB * 1024;
-const MAX_BLOB_BYTES   = Math.floor((MAX_B64_BYTES - 64) * 3 / 4);   // الحد المقابل للملف قبل التحويل (~165KB)
-const COMPRESS_OVER_B  = 100 * 1024;   // أي فيديو أكبر من 100KB يُضغط تلقائياً
-/* محاولات الضغط من الأخف للأقوى: [ضلع قصير بالبكسل، حجم مستهدف بالبايت، مع صوت؟] */
-const COMPRESS_STEPS = [
-  {short:320, targetBytes:125*1024, audio:true},
-  {short:240, targetBytes:105*1024, audio:false},
-  {short:176, targetBytes:85*1024,  audio:false}
-];
-const TOO_BIG_MSG = "الفيديو كبير جداً على حدّ قاعدة البيانات (" + MAX_B64_KB + "KB). اختر فيديو أقصر (أقل من 3–5 ثوانٍ) أو بدقة أقل ثم أعد المحاولة.";
-let upMeta = {dur:0, playable:null};
+/* ── رفع شورت جديد: أي فيديو وبأي حجم، مع تقطيع تلقائي (Chunking) ── */
+const CHUNK_RAW_BYTES = 115200;   // 115200 بايت خام = 153600 حرف Base64 ≈ 150KB لكل جزء
+const UP_PARALLEL = 3;            // عدد الأجزاء المرفوعة بالتوازي
+const pad5 = (i)=>String(i).padStart(5, "0");
 
-function guessMime(f){
-  if(f.type) return f.type;
-  const e = (f.name || "").split(".").pop().toLowerCase();
-  return ({mp4:"video/mp4", m4v:"video/mp4", mov:"video/quicktime", webm:"video/webm", "3gp":"video/3gpp", mkv:"video/x-matroska"})[e] || "video/mp4";
-}
-const mbStr = (b)=>(b/1048576).toFixed(1) + "MB";
+function mbStr(b){ return b >= 1048576 ? (b/1048576).toFixed(1) + "MB" : Math.max(1, Math.round(b/1024)) + "KB"; }
 function setUpInfo(t){ $("upInfo").textContent = t; }
 function setUpBar(p){
   const b = $("upBar");
   if(p == null){ b.classList.add("hidden"); return; }
   b.classList.remove("hidden"); b.firstElementChild.style.width = Math.round(p*100) + "%";
 }
-function fileToDataURL(blob){
-  return new Promise((res,rej)=>{
+function guessMime(f){
+  if(f.type) return f.type;
+  const e = (f.name || "").split(".").pop().toLowerCase();
+  return ({mp4:"video/mp4", m4v:"video/mp4", mov:"video/quicktime", webm:"video/webm", "3gp":"video/3gpp", mkv:"video/x-matroska"})[e] || "video/mp4";
+}
+/* قراءة جزء من الملف كنص Base64 (بدون بادئة data:) — لا يُحمَّل الملف كاملاً في الذاكرة */
+function sliceToB64(blob){
+  return new Promise((res, rej)=>{
     const r = new FileReader();
-    r.onerror = ()=>rej(Object.assign(new Error("تعذّر قراءة ملف الفيديو من الجهاز، أعد اختياره ثم حاول مجدداً"), {code:"READ_FAILED"})); r.onload = ()=>res(r.result);
+    r.onerror = ()=>rej(new Error("تعذّر قراءة الفيديو من الجهاز، أعد اختياره ثم حاول مجدداً"));
+    r.onload = ()=>{ const t = String(r.result); res(t.slice(t.indexOf(",") + 1)); };
     r.readAsDataURL(blob);
   });
 }
-
-/* ── ضغط الفيديو: تشغيله على canvas وتسجيله بـ MediaRecorder بدقة وبت‌ريت أقل ── */
-function pickRecorderMime(){
-  const c = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"];
-  return c.find(t=>window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
-}
-function compressVideo(file, o, onProg){
-  return new Promise((resolve, reject)=>{
-    if(!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return reject(new Error("no-mediarecorder"));
-    const url = URL.createObjectURL(file);
-    const v = document.createElement("video");
-    v.playsInline = true; v.setAttribute("playsinline",""); v.preload = "auto"; v.loop = false;
-    v.style.cssText = "position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none";
-    document.body.appendChild(v);
-    let ac = null, rec = null, timer = null, guard = null, done = false;
-    const chunks = [];
-    const cleanup = ()=>{
-      clearInterval(timer); clearTimeout(guard);
-      try{ if(ac) ac.close(); }catch{}
-      try{ v.pause(); v.removeAttribute("src"); v.load(); }catch{}
-      v.remove(); URL.revokeObjectURL(url);
-    };
-    const fail = (e)=>{
-      if(done) return; done = true;
-      try{ if(rec && rec.state !== "inactive") rec.stop(); }catch{}
-      cleanup(); reject(e instanceof Error ? e : new Error(String(e)));
-    };
-    v.onerror = ()=>fail(new Error("decode"));
-    v.onloadedmetadata = async ()=>{
-      try{
-        const vw = v.videoWidth, vh = v.videoHeight;
-        if(!vw || !vh) throw new Error("no-size");
-        const sc = Math.min(1, o.short / Math.min(vw, vh));
-        const w = Math.max(2, Math.round(vw*sc/2)*2), h = Math.max(2, Math.round(vh*sc/2)*2);
-        const dur = Math.min(isFinite(v.duration) && v.duration > 0 ? v.duration : o.maxSec, o.maxSec);
-
-        const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        const stream = canvas.captureStream(30);
-
-        /* الصوت: عبر AudioContext (بدون تشغيله في السماعات) */
-        let hasAudio = false;
-        try{
-          const AC = window.AudioContext || window.webkitAudioContext;
-          if(AC){
-            ac = new AC(); if(ac.state === "suspended") await ac.resume().catch(()=>{});
-            const src = ac.createMediaElementSource(v), dest = ac.createMediaStreamDestination();
-            src.connect(dest);
-            dest.stream.getAudioTracks().forEach(t=>{ stream.addTrack(t); hasAudio = true; });
-          }
-        }catch(e){ hasAudio = false; }
-
-        const mime = pickRecorderMime();
-        if(!o.audio){ stream.getAudioTracks().forEach(t=>stream.removeTrack(t)); hasAudio = false; }
-        const audioBps = hasAudio ? 20000 : 0;
-        const budget = o.targetBytes * 8 * 0.7 / dur;                    // بت/ثانية (هامش أمان 30% لأن المسجّل يتجاوز الهدف أحياناً)
-        const vbps = Math.round(Math.max(20000, Math.min(800000, budget - audioBps)));
-        const opts = {videoBitsPerSecond: vbps};
-        if(mime) opts.mimeType = mime;
-        if(hasAudio) opts.audioBitsPerSecond = audioBps;
-        rec = new MediaRecorder(stream, opts);
-        rec.ondataavailable = (e)=>{ if(e.data && e.data.size) chunks.push(e.data); };
-        rec.onerror = ()=>fail(new Error("recorder"));
-        rec.onstop = ()=>{
-          if(done) return; done = true;
-          const type = (rec.mimeType || mime || "video/webm").split(";")[0];
-          const blob = new Blob(chunks, {type});
-          cleanup();
-          if(!blob.size) reject(new Error("empty")); else resolve(blob);
-        };
-
-        const finish = ()=>{ clearInterval(timer); if(rec.state !== "inactive") rec.stop(); };
-        v.onended = finish;
-
-        v.currentTime = 0;
-        ctx.fillStyle = "#000"; ctx.fillRect(0,0,w,h);
-        rec.start(500);
-        try{ v.muted = false; await v.play(); }
-        catch{ v.muted = true; await v.play(); }       // إن منع المتصفح الصوت نكمل بدونه
-
-        timer = setInterval(()=>{
-          if(v.readyState >= 2) ctx.drawImage(v, 0, 0, w, h);
-          const t = v.currentTime;
-          if(onProg) onProg(Math.min(1, t / dur));
-          if(t >= dur - 0.05) finish();
-        }, 33);
-        guard = setTimeout(()=>fail(new Error("timeout")), (dur + 25) * 1000);
-      }catch(e){ fail(e); }
-    };
-    v.src = url;
-  });
+async function withRetry(fn, tries){
+  let last;
+  for(let i = 0; i < (tries || 3); i++){
+    try{ return await fn(); }
+    catch(e){
+      last = e;
+      if(/permission/i.test(((e && e.code) || "") + ((e && e.message) || ""))) throw e;   // لا فائدة من إعادة المحاولة
+      await new Promise(r=>setTimeout(r, 600 * (i + 1)));
+    }
+  }
+  throw last;
 }
 
-/* ── واجهة نافذة الرفع ── */
 function resetUpload(){
   if(upURL){ URL.revokeObjectURL(upURL); upURL = null; }
-  upFile = null; upMeta = {dur:0, playable:null};
+  upFile = null;
   const v = $("upPrev");
   v.onloadedmetadata = null; v.onerror = null;
   try{ v.pause(); }catch{}
@@ -1628,86 +1558,63 @@ $("upFile").addEventListener("change", (e)=>{
   const f = e.target.files[0]; e.target.value = "";
   if(!f) return;
   $("upErr").textContent = "";
-  if(f.size > MAX_RAW_MB * 1048576){
-    $("upErr").textContent = "الملف كبير جداً (" + mbStr(f.size) + ") — الحد " + MAX_RAW_MB + "MB"; return;
-  }
   if(upURL) URL.revokeObjectURL(upURL);
-  upFile = f; upMeta = {dur:0, playable:null};
-  upURL = URL.createObjectURL(f);                       // معاينة فورية بدون قراءة الملف في الذاكرة
+  upFile = f; upURL = URL.createObjectURL(f);          // معاينة فورية بدون قراءة الملف
   const v = $("upPrev");
   v.classList.remove("hidden"); $("upPh").classList.add("hidden");
   $("upPick").textContent = "🔄 تغيير الفيديو";
-  const base = (f.name || "فيديو") + " · " + mbStr(f.size);
-  setUpInfo(base);
-  $("upPublish").disabled = false;                      // زر النشر يعمل فور اختيار الملف
-  $("upPublish").textContent = "نشر";
-  v.onloadedmetadata = ()=>{
-    upMeta.playable = true; upMeta.dur = v.duration || 0;
-    let t = base + " · " + Math.round(upMeta.dur) + " ث";
-    if(upMeta.dur > MAX_SHORT_SEC) t += " — سيُقتطع أول " + MAX_SHORT_SEC + " ثانية";
-    else if(f.size > COMPRESS_OVER_B) t += " — سيُضغط تلقائياً قبل النشر";
-    setUpInfo(t);
-  };
-  v.onerror = ()=>{                                     // لا نمنع النشر: نعرض أيقونة بدل المعاينة
-    upMeta.playable = false;
+  setUpInfo((f.name || "فيديو") + " · " + mbStr(f.size));
+  $("upPublish").disabled = false; $("upPublish").textContent = "نشر";
+  v.onloadedmetadata = null;
+  v.onerror = ()=>{                                     // تعذّرت المعاينة؟ لا مشكلة — نعرض أيقونة ويبقى النشر متاحاً
     v.classList.add("hidden");
     $("upPhName").textContent = (f.name || "") + " · " + mbStr(f.size);
     $("upPh").classList.remove("hidden");
-    setUpInfo("جاهز للرفع (تعذّر عرض معاينة هذا الفيديو في المتصفح)");
   };
   v.src = upURL;
 });
 
 $("upPublish").onclick = async ()=>{
   if(!upFile || upBusy) return;
-  const text = $("upDesc").value.trim(), file = upFile;
-  const tooBig = ()=>Object.assign(new Error(TOO_BIG_MSG), {code:"TOO_BIG"});
+  const file = upFile, text = $("upDesc").value.trim();
   upBusy = true; $("upPublish").disabled = true; $("upCancel").disabled = true; $("upErr").textContent = "";
-  $("upPublish").textContent = "جارٍ المعالجة…";
-  const ref = db.ref("shorts").push();
+  $("upPublish").textContent = "جارٍ الرفع…";
+  const metaRef = db.ref("shortsMeta").push(), id = metaRef.key;
+  const n = Math.max(1, Math.ceil(file.size / CHUNK_RAW_BYTES));
+  let next = 0, done = 0, aborted = false;
+  setUpBar(0); setUpInfo("جارٍ الرفع… 0%");
   try{
-    let blob = file;
-    const mustCompress = file.size > COMPRESS_OVER_B || upMeta.dur > MAX_SHORT_SEC;
-    if(mustCompress && upMeta.playable !== false){
-      const prog = (p)=>{ setUpBar(p); };
-      for(let i = 0; i < COMPRESS_STEPS.length; i++){
-        const st = COMPRESS_STEPS[i];
-        setUpInfo("جارٍ ضغط الفيديو (محاولة " + (i+1) + "/" + COMPRESS_STEPS.length + ")… ابقَ في هذه الصفحة"); setUpBar(0);
+    const worker = async ()=>{
+      while(!aborted && next < n){
+        const i = next++;
         try{
-          blob = await compressVideo(file, {short:st.short, targetBytes:st.targetBytes, audio:st.audio, maxSec:MAX_SHORT_SEC}, prog);
-        }catch(e){
-          console.warn("compress failed:", e);
-          blob = null; break;                         // المتصفح لا يدعم الضغط أو تعذّر فك الفيديو
-        }
-        if(blob.size <= MAX_BLOB_BYTES) break;        // الحجم مقبول
+          const b64 = await sliceToB64(file.slice(i * CHUNK_RAW_BYTES, (i + 1) * CHUNK_RAW_BYTES));
+          await withRetry(()=>db.ref("shorts/"+id+"/chunks/"+pad5(i)).set(b64));
+        }catch(e){ aborted = true; throw e; }
+        done++; setUpBar(done / n);
+        setUpInfo("جارٍ الرفع… " + Math.round(done / n * 100) + "% (" + done + "/" + n + ")");
       }
-      setUpBar(null);
-      if(!blob) blob = file;                          // نجرّب الأصل فقط إن كان صغيراً (يُفحص بالأسفل)
-    }
-    if(blob.size > MAX_BLOB_BYTES) throw tooBig();
-    if(!blob.type || blob === file) blob = new Blob([blob], {type: guessMime(file)});
-
-    $("upPublish").textContent = "جارٍ الرفع…";
-    setUpInfo("جارٍ التجهيز (" + (blob.size/1024).toFixed(0) + "KB)…");
-    const video = await fileToDataURL(blob);
-    if(video.length > MAX_B64_BYTES) throw tooBig();   // فحص نهائي دقيق للنص الذي سيُرسل فعلاً
-    setUpInfo("جارٍ الحفظ في قاعدة البيانات (" + (video.length/1024).toFixed(0) + "KB)…");
-    await ref.set({                                  // مسار واحد: shorts.push()
-      uid: me.uid, name: me.name, photo: me.photo || null, text, video,
+    };
+    const res = await Promise.allSettled(Array.from({length: Math.min(UP_PARALLEL, n)}, worker));
+    const bad = res.find(r=>r.status === "rejected");
+    if(bad) throw bad.reason;
+    setUpInfo("جارٍ إنهاء النشر…");
+    await withRetry(()=>metaRef.set({                  // البيانات تُكتب أخيراً، فيظهر المقطع بعد اكتمال أجزائه
+      uid: me.uid, name: me.name, photo: me.photo || null, text,
       ts: firebase.database.ServerValue.TIMESTAMP,
+      mime: guessMime(file), size: file.size, chunkCount: n,
       commentsCount: 0
-    });
+    }));
     upBusy = false; closeUpload(true);
     toast("تم نشر الشورت ✓", true);
     $("shorts").scrollTo({top:0, behavior:"smooth"});
   }catch(err){
     console.error(err);
+    db.ref("shorts/"+id).remove().catch(()=>{});       // تنظيف ما رُفع من أجزاء
     const code = (err && err.code) || "", msg = (err && err.message) || String(err);
-    let t = (code === "TOO_BIG" || code === "READ_FAILED") ? msg
-          : "فشل النشر" + (code ? " [" + code + "]" : "") + ": " + msg;
-    if(/permission/i.test(code + msg)) t += "\nالسبب: قواعد Firebase لا تسمح بالكتابة في مسار shorts — انشر القواعد الموجودة أعلى الكود (Rules ← Publish).";
+    let t = "فشل النشر" + (code ? " [" + code + "]" : "") + ": " + msg;
+    if(/permission/i.test(code + msg)) t += "\nالسبب: قواعد Firebase لا تسمح بالكتابة — انشر القواعد الموجودة أعلى الكود (Rules ← Publish) وتأكد من وجود مساري shorts و shortsMeta.";
     $("upErr").style.whiteSpace = "pre-line"; $("upErr").textContent = t;
-    if(code === "TOO_BIG") toast("الفيديو كبير — اختر فيديو أقصر أو أصغر");
     $("upPublish").textContent = "إعادة المحاولة"; $("upPublish").disabled = false; setUpInfo(""); setUpBar(null);
   }finally{
     upBusy = false; $("upCancel").disabled = false;
