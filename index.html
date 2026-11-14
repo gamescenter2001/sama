@@ -370,6 +370,22 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
 .up-pick{display:flex;align-items:center;justify-content:center;gap:8px;padding:22px 14px;border-radius:18px;border:1.5px dashed rgba(34,211,238,.5);
   background:rgba(34,211,238,.06);cursor:pointer;font-weight:700;transition:.2s}
 .up-pick:hover{background:rgba(34,211,238,.12);box-shadow:0 0 20px rgba(34,211,238,.25)}
+
+/* ═══════ 🔔 الإشعارات ═══════ */
+.bell{position:relative}
+.badge{position:absolute;top:-5px;inset-inline-end:-5px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:var(--danger);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid #0a0b1e;box-shadow:0 0 12px rgba(255,93,122,.75);pointer-events:none}
+.bell.ring{animation:ring .8s ease}
+@keyframes ring{0%,100%{transform:rotate(0)}15%{transform:rotate(18deg)}30%{transform:rotate(-16deg)}45%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}75%{transform:rotate(4deg)}}
+.nt-item{display:flex;gap:12px;align-items:flex-start;padding:11px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid transparent;cursor:pointer;transition:.2s}
+.nt-item:hover{background:var(--glass-strong)}
+.nt-item.unread{background:rgba(124,92,255,.14);border-color:rgba(124,92,255,.42)}
+.nt-av{position:relative;flex-shrink:0}
+.nt-ic{position:absolute;bottom:-4px;inset-inline-end:-5px;width:21px;height:21px;border-radius:50%;background:#0d0f2b;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px}
+.nt-body{flex:1;min-width:0;line-height:1.6;font-size:14px}
+.nt-body b{color:var(--neon2)}
+.nt-snip{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nt-time{font-size:11px;color:var(--muted)}
+.nt-dot{width:9px;height:9px;border-radius:50%;background:var(--neon3);box-shadow:0 0 10px var(--neon3);flex-shrink:0;margin-top:7px}
 </style>
 </head>
 <body>
@@ -424,6 +440,7 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
   <header class="top">
     <div class="logo">سماء</div>
     <div class="hd-right">
+      <button id="bellBtn" class="icon-btn bell" type="button" aria-label="الإشعارات">🔔<span id="bellBadge" class="badge hidden">0</span></button>
       <button id="headSearch" class="icon-btn" type="button" aria-label="بحث">🔍</button>
       <div class="me-chip" onclick="showView('viewMe')">
         <span id="meName"></span>
@@ -497,7 +514,7 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
         <div id="meAvatarBig" class="avatar" style="width:78px;height:78px;font-size:34px;margin:0 auto 12px"></div>
         <div id="meNameBig" style="font-size:20px;font-weight:800"></div>
         <div id="meEmailBig" style="color:var(--muted);direction:ltr;margin:4px 0 18px"></div>
-        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button id="editProfileBtn" class="btn" type="button">✏️ تعديل الملف الشخصي</button><button id="logoutBtn" class="btn" style="background:linear-gradient(135deg,#ff5d7a,#ff4fd8)">تسجيل الخروج</button></div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button id="editProfileBtn" class="btn" type="button">✏️ تعديل الملف الشخصي</button><button id="soundToggle" class="btn-ghost" type="button"></button><button id="logoutBtn" class="btn" style="background:linear-gradient(135deg,#ff5d7a,#ff4fd8)">تسجيل الخروج</button></div>
       </div>
     </section>
   </main>
@@ -544,6 +561,21 @@ mark{background:rgba(34,211,238,.3);color:#fff;border-radius:4px;padding:0 2px}
     <input id="chatInput" class="field" placeholder="اكتب رسالة…" maxlength="1000" autocomplete="off">
     <button class="btn" type="submit">إرسال</button>
   </form>
+</div>
+
+<!-- ═══════════ 🔔 نافذة الإشعارات ═══════════ -->
+<div id="ntSheet" class="sheet-back">
+  <div class="sheet glass">
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <b>🔔 الإشعارات</b>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="ntReadAll" class="mini" type="button">✓ قراءة الكل</button>
+        <button id="ntClose" class="icon-btn" type="button" aria-label="إغلاق">✕</button>
+      </div>
+    </div>
+    <div id="ntList" class="sheet-list"></div>
+  </div>
 </div>
 
 <!-- ═══════════ 🎬 نافذة تعليقات الشورتز ═══════════ -->
@@ -606,13 +638,19 @@ const firebaseConfig = {
 
 /*
   قواعد Realtime Database (الصقها في Rules ثم Publish):
-  ⚠️ الشورتز تُحفظ في مسار واحد فقط: "shorts" — لازم تنشر القواعد قبل رفع أي شورت.
+  ⚠️ الشورتز في مسار "shorts" والإشعارات في "notifications" — لازم تنشر القواعد (Rules ← Publish) وإلا لن تعمل.
   {
     "rules": {
       "users":    { ".read": "auth != null", "$uid": { ".write": "auth != null && auth.uid === $uid" } },
       "posts":    { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
       "shorts":   { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
       "comments": { ".read": "auth != null", ".write": "auth != null" },
+      "notifications": { "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".indexOn": ["ts"],
+          "$nid": {
+            ".write": "auth != null",
+            ".validate": "newData.child('from').val() === auth.uid || auth.uid === $uid" } } },
       "chats":    { "$chatId": {
           ".read":  "auth != null && $chatId.contains(auth.uid)",
           ".write": "auth != null && $chatId.contains(auth.uid)" } },
@@ -914,6 +952,7 @@ function startApp(){
   listenFeed();
   listenUsers();
   listenShorts();
+  listenNotifs();
   measureHeader();
 }
 function stopApp(){
@@ -926,6 +965,7 @@ function stopApp(){
   for(const k in commentListeners) delete commentListeners[k];
   closeChat(); closeProfile(); usersState = "loading";
   stopShorts();
+  stopNotifs();
   $("feed").innerHTML = "";
   ["chatRecent","chatFriends","chatOthers","searchResults"].forEach(i=>$(i).innerHTML = "");
   $("searchInput").value = ""; $("chatFilter").value = "";
@@ -1086,6 +1126,8 @@ function buildPost(id, p){
 
   // إعجاب (Transaction لتفادي التعارض)
   likeBtn.onclick = ()=>{
+    const was = !!((postsCache[id] || {}).likes && postsCache[id].likes[me.uid]);
+    playSound(was ? "click" : "like");
     db.ref("posts/"+id).transaction(cur=>{
       if(cur === null) return cur;
       cur.likes = cur.likes || {};
@@ -1093,11 +1135,16 @@ function buildPost(id, p){
       else cur.likes[me.uid] = true;
       cur.likesCount = Object.keys(cur.likes).length;
       return cur;
-    }, (err)=>{ if(err) toast("تعذّر تسجيل الإعجاب"); });
+    }, (err, committed, snap)=>{
+      if(err){ toast("تعذّر تسجيل الإعجاب"); return; }
+      const v = committed && snap && snap.val();
+      if(v) notifyLike("post", id, p.uid, !!(v.likes && v.likes[me.uid]));
+    });
   };
 
   // فتح/إغلاق التعليقات
   cmtBtn.onclick = ()=>{
+    playSound("click");
     const open = cBox.classList.toggle("hidden") === false;
     if(open){
       if(!commentListeners[id]){
@@ -1116,13 +1163,14 @@ function buildPost(id, p){
     e.preventDefault();
     const text = cInput.value.trim();
     if(!text) return;
-    cInput.value = "";
+    cInput.value = ""; playSound("send");
     try{
       await db.ref("comments/"+id).push({
         uid: me.uid, name: me.name, text,
         ts: firebase.database.ServerValue.TIMESTAMP
       });
       db.ref("posts/"+id+"/commentsCount").transaction(n=>(n||0)+1);
+      notifyComment("post", id, p.uid, text);
     }catch{ toast("تعذّر إرسال التعليق"); }
   });
 
@@ -1355,7 +1403,7 @@ function buildShort(id, s){
   };
 
   likeBtn.onclick = ()=>likeShort(id, false);
-  cmtBtn.onclick  = ()=>openShortComments(id);
+  cmtBtn.onclick  = ()=>{ playSound("click"); openShortComments(id); };
   return item;
 }
 
@@ -1372,7 +1420,9 @@ function likeShort(id, onlyAdd){
   const cur = shortsCache[id] || {};
   const liked = !!(cur.likes && cur.likes[me.uid]);
   if(liked && onlyAdd) return;
+  playSound(liked ? "click" : "like");
   db.ref("shorts/"+id+"/likes/"+me.uid).set(liked ? null : true)   // يكتب مفتاحاً صغيراً فقط، لا الفيديو
+    .then(()=>notifyLike("short", id, cur.uid, !liked))
     .catch(err=>{ console.error(err); toast("تعذّر تسجيل الإعجاب: " + (err.code || err.message)); });
 }
 
@@ -1413,13 +1463,14 @@ $("scForm").addEventListener("submit", async (e)=>{
   e.preventDefault();
   const text = $("scInput").value.trim(), id = scId;
   if(!text || !id) return;
-  $("scInput").value = "";
+  $("scInput").value = ""; playSound("send");
   try{
     await db.ref("comments/"+id).push({
       uid: me.uid, name: me.name, text,
       ts: firebase.database.ServerValue.TIMESTAMP
     });
     db.ref("shorts/"+id+"/commentsCount").transaction(n=>(n||0)+1);
+    notifyComment("short", id, (shortsCache[id]||{}).uid, text);
   }catch{ toast("تعذّر إرسال التعليق"); }
 });
 
@@ -1662,6 +1713,190 @@ $("upPublish").onclick = async ()=>{
     upBusy = false; $("upCancel").disabled = false;
   }
 };
+
+/* ═══════════════════════════════════════════════════════════
+   🔊 أصوات تفاعلية (Web Audio API — بدون ملفات خارجية)
+   ═══════════════════════════════════════════════════════════ */
+let audioCtx = null, soundOn = true, chatReady = false;
+try{ soundOn = localStorage.getItem("sama_sound") !== "off"; }catch{}
+
+function getAudio(){
+  if(!audioCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    try{ audioCtx = new AC(); }catch{ return null; }
+  }
+  if(audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
+  return audioCtx;
+}
+/* المتصفحات تمنع الصوت قبل أول تفاعل: نفتح السياق عند أول لمسة */
+["pointerdown","keydown","touchstart"].forEach(ev=>document.addEventListener(ev, ()=>getAudio(), {passive:true}));
+
+function tone(ctx, t0, freq, dur, o){
+  o = o || {};
+  const osc = ctx.createOscillator(), g = ctx.createGain(), vol = o.vol || .07;
+  osc.type = o.type || "sine";
+  osc.frequency.setValueAtTime(freq, t0);
+  if(o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t0 + dur);
+  g.gain.setValueAtTime(.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + .012);          // بداية ناعمة بدون "طقطقة"
+  g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  osc.connect(g); g.connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + dur + .03);
+}
+function playSound(kind){
+  if(!soundOn) return;
+  const c = getAudio(); if(!c) return;
+  try{
+    const t = c.currentTime + .005;
+    switch(kind){
+      case "click":   tone(c, t, 640, .06, {to:430, vol:.05}); break;
+      case "like":    tone(c, t, 660, .09, {vol:.06}); tone(c, t+.07, 990, .16, {vol:.06}); break;
+      case "send":    tone(c, t, 480, .11, {to:780, vol:.055}); break;
+      case "notify":  tone(c, t, 880, .16, {vol:.07}); tone(c, t+.11, 1320, .30, {vol:.06}); break;
+      case "message": tone(c, t, 784, .10, {vol:.07}); tone(c, t+.12, 1047, .22, {vol:.065}); break;
+    }
+  }catch(e){ /* الصوت ميزة إضافية ولا يجب أن يعطّل التطبيق */ }
+}
+function paintSoundBtn(){ $("soundToggle").textContent = soundOn ? "🔊 الأصوات: مفعّلة" : "🔇 الأصوات: متوقفة"; }
+$("soundToggle").onclick = ()=>{
+  soundOn = !soundOn;
+  try{ localStorage.setItem("sama_sound", soundOn ? "on" : "off"); }catch{}
+  paintSoundBtn(); playSound("click");
+};
+paintSoundBtn();
+
+/* ═══════════════════════════════════════════════════════════
+   🔔 الإشعارات  (notifications/{uid}/{id})
+   ═══════════════════════════════════════════════════════════ */
+let notifRef = null, notifCache = {}, notifReady = false;
+
+/* ── الإرسال ── */
+function pushNotif(toUid, key, data){
+  if(!me || !toUid || toUid === me.uid) return;               // لا إشعار لنفسك
+  const base = db.ref("notifications/"+toUid);
+  const ref = key ? base.child(key) : base.push();
+  ref.set({from: me.uid, fromName: me.name, read: false, ts: firebase.database.ServerValue.TIMESTAMP, ...data})
+     .catch(e=>console.warn("notify:", e.code || e));
+}
+function notifyLike(kind, tid, owner, liked){
+  if(!owner || owner === me.uid) return;
+  const key = "like_" + tid + "_" + me.uid;                    // إشعار واحد لكل معجِب (لا تكرار)
+  if(liked) pushNotif(owner, key, {type:"like", targetType:kind, targetId:tid});
+  else db.ref("notifications/"+owner+"/"+key).remove().catch(()=>{});
+}
+function notifyComment(kind, tid, owner, text){
+  pushNotif(owner, null, {type:"comment", targetType:kind, targetId:tid, text:String(text||"").slice(0,80)});
+}
+
+/* ── الاستقبال ── */
+function listenNotifs(){
+  stopNotifs();
+  notifReady = false;
+  notifRef = db.ref("notifications/"+me.uid).orderByChild("ts").limitToLast(50);
+  notifRef.on("child_added", s=>{
+    const n = s.val(); if(!n) return;
+    notifCache[s.key] = n; renderNotifs();
+    if(notifReady && !n.read) onNewNotif(s.key, n);
+  }, err=>console.warn("notifications:", err.code || err));
+  notifRef.on("child_changed", s=>{
+    const n = s.val(), old = notifCache[s.key] || {};
+    if(!n) return;
+    notifCache[s.key] = n; renderNotifs();
+    if(notifReady && !n.read && (n.ts || 0) > (old.ts || 0)) onNewNotif(s.key, n);   // رسالة/إعجاب جديد على نفس الإشعار
+  });
+  notifRef.on("child_removed", s=>{ delete notifCache[s.key]; renderNotifs(); });
+  const mine = notifRef;
+  notifRef.once("value").then(()=>{ if(notifRef === mine) notifReady = true; }).catch(()=>{ notifReady = true; });
+}
+function stopNotifs(){
+  if(notifRef){ notifRef.off(); notifRef = null; }
+  notifCache = {}; notifReady = false;
+  closeNotifs();
+  $("bellBadge").classList.add("hidden"); $("ntList").innerHTML = "";
+}
+
+function notifAction(n){
+  const sh = n.targetType === "short";
+  if(n.type === "like")    return sh ? "أعجب بالشورت الخاص بك" : "أعجب بمنشورك";
+  if(n.type === "comment") return sh ? "علّق على شورتك" : "علّق على منشورك";
+  if(n.type === "message") return "أرسل لك رسالة";
+  return "لديك إشعار جديد";
+}
+const NT_ICON = {like:"❤️", comment:"💬", message:"✉️"};
+
+function onNewNotif(id, n){
+  /* رسالة من شخص محادثته مفتوحة الآن: تظهر في الشات نفسه، فنعلّمها مقروءة بلا تنبيه مكرر */
+  if(n.type === "message" && chatOther && chatOther.uid === n.from && $("chatPanel").classList.contains("open")){
+    markRead(id); return;
+  }
+  playSound(n.type === "message" ? "message" : "notify");
+  const nm = profileOf(n.from, n.fromName).name;
+  toast("🔔 " + nm + " " + notifAction(n), true);
+  const b = $("bellBtn"); b.classList.remove("ring"); void b.offsetWidth; b.classList.add("ring");
+}
+
+function renderNotifs(){
+  const items = Object.entries(notifCache).sort((a,b)=>(b[1].ts||0) - (a[1].ts||0));
+  const unread = items.filter(([,n])=>!n.read).length;
+  const bd = $("bellBadge");
+  bd.textContent = unread > 99 ? "99+" : String(unread);
+  bd.classList.toggle("hidden", unread === 0);
+  document.title = unread ? "(" + unread + ") سماء" : "سماء";
+  $("ntReadAll").classList.toggle("hidden", unread === 0);
+
+  const box = $("ntList"); box.innerHTML = "";
+  if(!items.length){ box.appendChild(el("div","empty","لا توجد إشعارات بعد ✨")); return; }
+  items.forEach(([id,n])=>{
+    const row = el("div","nt-item" + (n.read ? "" : " unread"));
+    const av = el("div","nt-av"); av.appendChild(avatarFor(n.from, n.fromName));
+    av.appendChild(el("span","nt-ic", NT_ICON[n.type] || "🔔"));
+    const body = el("div","nt-body");
+    const line = el("div"); line.appendChild(nameFor(n.from, n.fromName, "b")); line.append(" " + notifAction(n));
+    body.appendChild(line);
+    if(n.text) body.appendChild(el("div","nt-snip", "«" + n.text + "»"));
+    body.appendChild(el("div","nt-time", fmtTime(n.ts)));
+    row.append(av, body);
+    if(!n.read) row.appendChild(el("span","nt-dot"));
+    row.onclick = ()=>openNotif(id, n);
+    box.appendChild(row);
+  });
+}
+
+function markRead(id){
+  if(!notifCache[id] || notifCache[id].read) return;
+  notifCache[id] = {...notifCache[id], read:true}; renderNotifs();
+  db.ref("notifications/"+me.uid+"/"+id+"/read").set(true).catch(()=>{});
+}
+$("ntReadAll").onclick = ()=>{
+  const up = {};
+  for(const id in notifCache) if(!notifCache[id].read){ up[id+"/read"] = true; notifCache[id] = {...notifCache[id], read:true}; }
+  renderNotifs(); playSound("click");
+  if(Object.keys(up).length) db.ref("notifications/"+me.uid).update(up).catch(()=>{});
+};
+
+function openNotifs(){ renderNotifs(); $("ntSheet").classList.add("open"); }
+function closeNotifs(){ $("ntSheet").classList.remove("open"); }
+$("bellBtn").onclick = ()=>{ playSound("click"); $("ntSheet").classList.contains("open") ? closeNotifs() : openNotifs(); };
+$("ntClose").onclick = closeNotifs;
+$("ntSheet").addEventListener("click", e=>{ if(e.target === $("ntSheet")) closeNotifs(); });
+
+function openNotif(id, n){
+  markRead(id); closeNotifs(); playSound("click");
+  if(n.type === "message"){ openChat(n.from, profileOf(n.from, n.fromName).name); return; }
+  if(n.targetType === "short"){
+    showView("viewShorts");
+    setTimeout(()=>{
+      const x = shortEls[n.targetId];
+      if(!x){ toast("هذا المقطع لم يعد متاحاً"); return; }
+      x.item.scrollIntoView({behavior:"smooth"});
+      if(n.type === "comment") openShortComments(n.targetId);
+    }, 150);
+    return;
+  }
+  showView("viewFeed");
+  setTimeout(()=>{ if(postEls[n.targetId]) jumpToPost(n.targetId); else toast("هذا المنشور لم يعد متاحاً"); }, 80);
+}
 
 /* ═══════════════════════════════════════════════════════════
    5) البحث الشامل (أشخاص + منشورات)
@@ -1938,21 +2173,24 @@ function openChat(otherUid, otherName){
   pauseAllShorts();
 
   chatRef = db.ref("chats/"+chatId+"/messages").orderByChild("ts").limitToLast(200);
+  chatReady = false;
   chatRef.on("child_added", snap=>{
     const m = snap.val();
     const mine = m.from === me.uid;
+    if(chatReady && !mine) playSound("message");
     const bubble = el("div","msg "+(mine?"mine":"theirs"));
     bubble.appendChild(document.createTextNode(m.text));
     bubble.appendChild(el("span","t", fmtTime(m.ts)));
     $("chatBody").appendChild(bubble);
     $("chatBody").scrollTop = $("chatBody").scrollHeight;
   }, err=>{ console.error(err); toast("تعذّر فتح المحادثة"); });
+  { const my = chatRef; my.once("value").then(()=>{ if(chatRef === my) chatReady = true; }).catch(()=>{}); }
   setTimeout(()=>$("chatInput").focus(), 350);
 }
 function closeChat(){
   const was = chatId !== null;
   if(chatRef){ chatRef.off(); chatRef = null; }
-  chatId = null; chatOther = null;
+  chatId = null; chatOther = null; chatReady = false;
   $("chatPanel").classList.remove("open");
   if(was) resumeShort();
 }
@@ -1962,11 +2200,13 @@ $("chatForm").addEventListener("submit", async (e)=>{
   e.preventDefault();
   const text = $("chatInput").value.trim();
   if(!text || !chatId || !chatOther) return;
-  const other = chatOther, TS = firebase.database.ServerValue.TIMESTAMP;
+  const other = chatOther, cid = chatId, TS = firebase.database.ServerValue.TIMESTAMP;
+  playSound("send");
   $("chatInput").value = "";
   try{
     await db.ref("chats/"+chatId+"/messages").push({from: me.uid, text, ts: TS});
   }catch{ toast("تعذّر إرسال الرسالة"); return; }
+  pushNotif(other.uid, "msg_"+me.uid, {type:"message", targetType:"chat", targetId:cid, text:text.slice(0,80)});
   // تحديث "آخر المحادثات" للطرفين (لا يعطّل الإرسال إن لم تُنشر القواعد الجديدة)
   const last = {text: text.slice(0, 80), from: me.uid, ts: TS};
   db.ref().update({
