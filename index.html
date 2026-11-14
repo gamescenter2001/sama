@@ -606,13 +606,12 @@ const firebaseConfig = {
 
 /*
   قواعد Realtime Database (الصقها في Rules ثم Publish):
-  ⚠️ جديد: أُضيف مساري "shorts" و "shortVideos" — لازم تنشر القواعد قبل رفع أي شورت.
+  ⚠️ الشورتز تُحفظ في مسار واحد فقط: "shorts" — لازم تنشر القواعد قبل رفع أي شورت.
   {
     "rules": {
       "users":    { ".read": "auth != null", "$uid": { ".write": "auth != null && auth.uid === $uid" } },
       "posts":    { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
       "shorts":   { ".read": "auth != null", ".indexOn": ["ts"], "$id": { ".write": "auth != null" } },
-      "shortVideos": { "$id": { ".read": "auth != null", ".write": "auth != null" } },
       "comments": { ".read": "auth != null", ".write": "auth != null" },
       "chats":    { "$chatId": {
           ".read":  "auth != null && $chatId.contains(auth.uid)",
@@ -641,7 +640,7 @@ let searchTab = "all", searchTimer = null;
 
 /* ── متغيرات الشورتز ── */
 const MAX_SHORT_SEC = 60;      // أقصى مدة (ثانية)
-const SHORTS_LIMIT  = 12;      // عدد المقاطع المحمّلة (الأحدث)
+const SHORTS_LIMIT  = 6;       // عدد المقاطع المحمّلة (الأحدث)
 let shortsRef = null, shortsLoaded = false, shortsMuted = false, currentShort = null;
 const shortEls = {}, shortsCache = {};
 let scId = null, scRef = null;          // نافذة تعليقات الشورت
@@ -1144,9 +1143,8 @@ function updatePost(id, p){
    🎬 4) شورتز (فيديوهات قصيرة)
    ───────────────────────────────────────────────────────────
    البنية في قاعدة البيانات:
-     shorts/{id}      → بيانات خفيفة (الناشر، الوصف، الوقت، الإعجابات، عدد التعليقات)
-     shortVideos/{id} → {data: "data:video/mp4;base64,..."}  (يُحمَّل عند الحاجة فقط)
-   فصل الفيديو عن البيانات يمنع تحميل عشرات الميجابايتات عند فتح القسم.
+     shorts/{id} → {uid, name, photo, text, ts, commentsCount, likes, video:"data:video/...;base64,..."}
+   مسار واحد فقط (shorts.push). ولتخفيف التحميل نعرض أحدث 6 مقاطع ونضغط الفيديو قبل الرفع.
    ═══════════════════════════════════════════════════════════ */
 
 /* مراقب التشغيل: الفيديو الظاهر (≥60%) يعمل والباقي يتوقف */
@@ -1214,8 +1212,7 @@ async function loadMedia(x){
   if(!x || x.ready || x.loading) return;
   x.loading = true; x.spin.classList.remove("hidden"); x.msg.classList.add("hidden");
   try{
-    const snap = await db.ref("shortVideos/"+x.id).once("value");
-    const d = snap.val(), data = d && d.data;
+    const data = (shortsCache[x.id] || {}).video;
     if(!data) throw new Error("no-data");
     let url = data;
     try{ const blob = await (await fetch(data)).blob(); url = URL.createObjectURL(blob); x.blobUrl = url; }catch{}
@@ -1372,14 +1369,11 @@ function burstHeart(x){
 }
 
 function likeShort(id, onlyAdd){
-  db.ref("shorts/"+id).transaction(cur=>{
-    if(cur === null) return cur;
-    cur.likes = cur.likes || {};
-    if(cur.likes[me.uid]){ if(onlyAdd) return cur; delete cur.likes[me.uid]; }
-    else cur.likes[me.uid] = true;
-    cur.likesCount = Object.keys(cur.likes).length;
-    return cur;
-  }, (err)=>{ if(err) toast("تعذّر تسجيل الإعجاب"); });
+  const cur = shortsCache[id] || {};
+  const liked = !!(cur.likes && cur.likes[me.uid]);
+  if(liked && onlyAdd) return;
+  db.ref("shorts/"+id+"/likes/"+me.uid).set(liked ? null : true)   // يكتب مفتاحاً صغيراً فقط، لا الفيديو
+    .catch(err=>{ console.error(err); toast("تعذّر تسجيل الإعجاب: " + (err.code || err.message)); });
 }
 
 function updateShort(id, s){
@@ -1431,8 +1425,8 @@ $("scForm").addEventListener("submit", async (e)=>{
 
 /* ── رفع شورت جديد (يقبل أي فيديو + ضغط تلقائي) ── */
 const MAX_RAW_MB       = 500;  // أقصى حجم للملف المختار من الهاتف
-const COMPRESS_OVER_MB = 3;    // أي فيديو أكبر من هذا يُضغط تلقائياً قبل الرفع
-const MAX_FINAL_MB     = 8;    // أقصى حجم بعد المعالجة (قبل تحويله إلى Base64)
+const COMPRESS_OVER_MB = 2;    // أي فيديو أكبر من هذا يُضغط تلقائياً قبل الرفع
+const MAX_FINAL_MB     = 5;    // أقصى حجم بعد المعالجة (قبل تحويله إلى Base64)
 let upMeta = {dur:0, playable:null};
 
 function guessMime(f){
@@ -1608,7 +1602,7 @@ $("upPublish").onclick = async ()=>{
   const text = $("upDesc").value.trim(), file = upFile, limit = MAX_FINAL_MB * 1048576;
   upBusy = true; $("upPublish").disabled = true; $("upCancel").disabled = true; $("upErr").textContent = "";
   $("upPublish").textContent = "جارٍ المعالجة…";
-  const ref = db.ref("shorts").push(), id = ref.key;
+  const ref = db.ref("shorts").push();
   try{
     let blob = file;
     const needCompress = file.size > COMPRESS_OVER_MB * 1048576 || upMeta.dur > MAX_SHORT_SEC;
@@ -1616,10 +1610,10 @@ $("upPublish").onclick = async ()=>{
       try{
         const prog = (p)=>{ setUpBar(p); setUpInfo("جارٍ ضغط الفيديو… " + Math.round(p*100) + "% (ابقَ في هذه الصفحة)"); };
         setUpInfo("جارٍ ضغط الفيديو… 0% (ابقَ في هذه الصفحة)"); setUpBar(0);
-        blob = await compressVideo(file, {short:480, targetMB:6.5, maxSec:MAX_SHORT_SEC}, prog);
+        blob = await compressVideo(file, {short:480, targetMB:3.5, maxSec:MAX_SHORT_SEC}, prog);
         if(blob.size > limit){                         // ما زال كبيراً → محاولة ثانية بدقة وجودة أقل
           setUpInfo("إعادة الضغط بجودة أقل…"); setUpBar(0);
-          blob = await compressVideo(file, {short:360, targetMB:4, maxSec:MAX_SHORT_SEC}, prog);
+          blob = await compressVideo(file, {short:360, targetMB:2.2, maxSec:MAX_SHORT_SEC}, prog);
         }
         if(blob.size >= file.size && file.size <= limit && !(upMeta.dur > MAX_SHORT_SEC)) blob = file;
       }catch(e){
@@ -1633,10 +1627,11 @@ $("upPublish").onclick = async ()=>{
 
     $("upPublish").textContent = "جارٍ الرفع…";
     setUpInfo("جارٍ الرفع (" + mbStr(blob.size) + ")… يرجى عدم إغلاق الصفحة");
-    const data = await fileToDataURL(blob);
-    await db.ref("shortVideos/"+id).set({data});                // 1) الفيديو أولاً
-    await ref.set({                                              // 2) ثم البيانات (فيظهر المقطع جاهزاً)
-      uid: me.uid, name: me.name, photo: me.photo || null, text,
+    const video = await fileToDataURL(blob);
+    if(video.length > 7.5*1048576) throw Object.assign(new Error("حجم الفيديو بعد التحويل كبير (" + (video.length/1048576).toFixed(1) + "MB)"), {code:"TOO_BIG"});
+    setUpInfo("جارٍ الحفظ في قاعدة البيانات…");
+    await ref.set({                                  // مسار واحد: shorts.push()
+      uid: me.uid, name: me.name, photo: me.photo || null, text, video,
       ts: firebase.database.ServerValue.TIMESTAMP,
       commentsCount: 0
     });
@@ -1645,10 +1640,12 @@ $("upPublish").onclick = async ()=>{
     $("shorts").scrollTo({top:0, behavior:"smooth"});
   }catch(err){
     console.error(err);
-    db.ref("shortVideos/"+id).remove().catch(()=>{});
-    $("upErr").textContent = err && err.message === "toobig"
+    const code = (err && err.code) || "", msg = (err && err.message) || String(err);
+    let t = err && err.message === "toobig"
       ? "تعذّر تصغير الفيديو إلى الحجم المسموح على متصفحك — جرّب فيديو أقصر أو استخدم Chrome"
-      : "تعذّر النشر — تأكد من نشر قواعد shorts و shortVideos في Firebase";
+      : "فشل النشر" + (code ? " [" + code + "]" : "") + ": " + msg;
+    if(/permission/i.test(code + msg)) t += "\nالسبب: قواعد Firebase لا تسمح بالكتابة في مسار shorts — انشر القواعد الموجودة أعلى الكود (Rules ← Publish).";
+    $("upErr").style.whiteSpace = "pre-line"; $("upErr").textContent = t;
     $("upPublish").textContent = "إعادة المحاولة"; $("upPublish").disabled = false; setUpInfo(""); setUpBar(null);
   }finally{
     upBusy = false; $("upCancel").disabled = false;
