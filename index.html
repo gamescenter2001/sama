@@ -89,6 +89,9 @@ nav.bottom button.active{color:var(--neon2);background:rgba(10,132,255,.12)}
 .nav-dot{position:absolute;top:5px;inset-inline-end:calc(50% - 20px);width:9px;height:9px;border-radius:50%;background:var(--danger);border:2px solid #fff}
 ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:rgba(0,0,0,.18);border-radius:6px}
 .hd-right{display:flex;align-items:center;gap:10px}
+.unread-badge,.nav-badge{background:#ff3b30;color:#fff;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;border-radius:999px}
+.unread-badge{min-width:22px;height:22px;padding:0 6px;font-size:12px;flex-shrink:0;box-shadow:0 2px 6px rgba(255,59,48,.4)}
+.nav-badge{position:absolute;top:0;inset-inline-end:calc(50% - 28px);min-width:19px;height:19px;padding:0 4px;font-size:11px;border:2px solid #fff;box-sizing:border-box}
 .icon-btn{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.72);border:1px solid var(--line);font-size:16px}.icon-btn:hover{background:#fff}
 .search-bar{display:flex;align-items:center;gap:10px;padding:2px 16px;margin-bottom:14px;border-radius:999px}
 .search-bar:focus-within{box-shadow:0 0 0 3px rgba(10,132,255,.2)}
@@ -272,7 +275,6 @@ mark{background:rgba(10,132,255,.22);color:inherit;border-radius:4px;padding:0 2
   <header class="top">
     <div class="logo">سماء</div>
     <div class="hd-right">
-      <button id="bellBtn" class="icon-btn bell" type="button" aria-label="الإشعارات">🔔<span id="bellBadge" class="badge hidden">0</span></button>
       <button id="headSearch" class="icon-btn" type="button" aria-label="بحث">🔍</button>
       <div class="me-chip" onclick="showView('viewMe')">
         <span id="meName"></span>
@@ -329,7 +331,7 @@ mark{background:rgba(10,132,255,.22);color:inherit;border-radius:4px;padding:0 2
   </main>
 
   <nav class="bottom glass">
-    <button data-view="viewChats" class="active"><i>💬</i>المحادثات<span id="navChatDot" class="nav-dot hidden"></span></button>
+    <button data-view="viewChats" class="active"><i>💬</i>المحادثات<span id="navChatBadge" class="nav-badge hidden" aria-label="رسائل غير مقروءة">0</span></button>
     <button data-view="viewStatus"><i>✨</i>الحالات<span id="navStDot" class="nav-dot hidden"></span></button>
     <button data-view="viewSearch"><i>🔍</i>بحث</button>
     <button data-view="viewMe"><i>👤</i>حسابي</button>
@@ -428,21 +430,6 @@ mark{background:rgba(10,132,255,.22);color:inherit;border-radius:4px;padding:0 2
     <div class="sheet-grip"></div>
     <div class="sheet-head"><b id="vwTitle">المشاهدات</b><button id="vwClose" class="icon-btn" type="button" aria-label="إغلاق">✕</button></div>
     <div id="vwList" class="sheet-list"></div>
-  </div>
-</div>
-
-<!-- ═══════════ 🔔 نافذة الإشعارات ═══════════ -->
-<div id="ntSheet" class="sheet-back">
-  <div class="sheet glass">
-    <div class="sheet-grip"></div>
-    <div class="sheet-head">
-      <b>🔔 الإشعارات</b>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button id="ntReadAll" class="mini" type="button">✓ قراءة الكل</button>
-        <button id="ntClose" class="icon-btn" type="button" aria-label="إغلاق">✕</button>
-      </div>
-    </div>
-    <div id="ntList" class="sheet-list"></div>
   </div>
 </div>
 
@@ -989,7 +976,7 @@ document.addEventListener("click", e=>{
 
 /* ═══════════════════════════════════════════════════════════
    🔔 الإشعارات  notifications/{uid}/{id}
-   الأنواع: message · friendRequest · friendAccept · storyLike
+   الأنواع: message · friendRequest · friendAccept   (إعجاب الحالة لا يرسل إشعاراً)
    ═══════════════════════════════════════════════════════════ */
 let notifRef = null, notifCache = {}, notifReady = false;
 
@@ -1024,27 +1011,36 @@ function listenNotifs(){
 function stopNotifs(){
   if(notifRef){ notifRef.off(); notifRef = null; }
   notifCache = {}; notifReady = false;
-  closeNotifs();
-  $("bellBadge").classList.add("hidden"); $("ntList").innerHTML = "";
-  $("navChatDot").classList.add("hidden");
+  paintUnread();
 }
-function unreadFrom(uid){ const n = notifCache["msg_"+uid]; return !!(n && !n.read); }
 
-const NT_ICON = {message:"✉️", friendRequest:"🤝", friendAccept:"✅", storyLike:"❤️"};
+/* ── عدّاد الرسائل غير المقروءة: userChats/{me}/{other}/unread (المُرسِل يزيده بـ increment، وأنا أصفّره) ── */
+const unreadOf = (uid)=>{ const c = userChatsCache[uid]; return c ? (+c.unread || 0) : 0; };
+function paintUnread(){
+  let n = 0;
+  if(me) for(const u in userChatsCache) n += unreadOf(u);
+  const b = $("navChatBadge");
+  b.textContent = n > 99 ? "99+" : String(n);
+  b.classList.toggle("hidden", n === 0);
+  document.title = n ? "(" + n + ") سماء" : "سماء";
+}
+function clearUnread(uid){
+  const c = userChatsCache[uid];
+  if(!c || !c.unread) return;
+  c.unread = 0; paintUnread(); renderChats(); scheduleCache();
+  db.ref("userChats/"+me.uid+"/"+uid+"/unread").set(0).catch(()=>{});
+}
+
+const NT_ICON = {message:"✉️", friendRequest:"🤝", friendAccept:"✅"};
 function notifAction(n){
   if(n.type === "message") return "أرسل لك رسالة";
   if(n.type === "friendRequest") return "أرسل لك طلب صداقة";
   if(n.type === "friendAccept") return "قبل طلب صداقتك";
-  if(n.type === "storyLike") return "أعجب بحالتك";
   return "لديك إشعار جديد";
-}
-function visibleNotifs(){      // طلب صداقة لم يعد معلّقاً (أُلغي/رُدّ عليه) لا يُعرض
-  return Object.entries(notifCache)
-    .filter(([,n])=>!(n.type === "friendRequest" && incomingLoaded && !incomingMap[n.from]))
-    .sort((a,b)=>(b[1].ts||0) - (a[1].ts||0));
 }
 
 function onNewNotif(id, n){
+  if(n.type === "storyLike") return;                 // إعجاب الحالة يبقى داخل الحالة فقط
   /* رسالة من شخص محادثته مفتوحة الآن: تظهر في الشات نفسه، نعلّمها مقروءة بلا تنبيه مكرر */
   if(n.type === "message" && chatOther && chatOther.uid === n.from && $("chatPanel").classList.contains("open")){
     markRead(id); return;
@@ -1052,65 +1048,12 @@ function onNewNotif(id, n){
   playSound("message");
   const nm = profileOf(n.from, n.fromName).name;
   toast(n.type === "message" ? nm + ": " + (n.text || "أرسل لك رسالة") : nm + " " + notifAction(n), "info", NT_ICON[n.type] || "🔔");
-  const b = $("bellBtn"); b.classList.remove("ring"); void b.offsetWidth; b.classList.add("ring");
 }
-
-function renderNotifs(){
-  const items = visibleNotifs();
-  const unread = items.filter(([,n])=>!n.read).length;
-  const bd = $("bellBadge");
-  bd.textContent = unread > 99 ? "99+" : String(unread);
-  bd.classList.toggle("hidden", unread === 0);
-  $("navChatDot").classList.toggle("hidden", unread === 0);
-  document.title = unread ? "(" + unread + ") سماء" : "سماء";
-  $("ntReadAll").classList.toggle("hidden", unread === 0);
-
-  const box = $("ntList"); box.innerHTML = "";
-  if(!items.length){ box.appendChild(el("div","empty","لا توجد إشعارات بعد ✨")); }
-  else items.forEach(([id,n])=>{
-    const row = el("div","nt-item" + (n.read ? "" : " unread"));
-    const av = el("div","nt-av"); av.appendChild(avatarFor(n.from, n.fromName));
-    av.appendChild(el("span","nt-ic", NT_ICON[n.type] || "🔔"));
-    const body = el("div","nt-body");
-    const line = el("div"); line.appendChild(nameFor(n.from, n.fromName, "b")); line.append(" " + notifAction(n));
-    body.appendChild(line);
-    if(n.type === "message" && n.text) body.appendChild(el("div","nt-snip", "«" + n.text + "»"));
-    body.appendChild(el("div","nt-time", fmtTime(n.ts)));
-    row.append(av, body);
-    if(n.type === "friendRequest" && incomingMap[n.from]) row.appendChild(reqButtons(n.from));   // موافقة / رفض مباشرة
-    else if(!n.read) row.appendChild(el("span","nt-dot"));
-    row.onclick = ()=>openNotif(id, n);
-    box.appendChild(row);
-  });
-  renderChats();
-}
+function renderNotifs(){ renderChats(); }
 function markRead(id){
   if(!notifCache[id] || notifCache[id].read) return;
-  notifCache[id] = {...notifCache[id], read:true}; renderNotifs();
+  notifCache[id] = {...notifCache[id], read:true};
   db.ref("notifications/"+me.uid+"/"+id+"/read").set(true).catch(()=>{});
-}
-$("ntReadAll").onclick = ()=>{
-  const up = {};
-  for(const id in notifCache) if(!notifCache[id].read){ up[id+"/read"] = true; notifCache[id] = {...notifCache[id], read:true}; }
-  renderNotifs();
-  if(Object.keys(up).length) db.ref("notifications/"+me.uid).update(up).catch(()=>{});
-};
-function openNotifs(){ renderNotifs(); $("ntSheet").classList.add("open"); }
-function closeNotifs(){ $("ntSheet").classList.remove("open"); }
-$("bellBtn").onclick = ()=>{ $("ntSheet").classList.contains("open") ? closeNotifs() : openNotifs(); };
-$("ntClose").onclick = closeNotifs;
-$("ntSheet").addEventListener("click", e=>{ if(e.target === $("ntSheet")) closeNotifs(); });
-
-/* الانتقال المباشر عند الضغط على الإشعار */
-function openNotif(id, n){
-  markRead(id); closeNotifs();
-  const nm = profileOf(n.from, n.fromName).name;
-  if(n.type === "message") openChat(n.from, nm);
-  else if(n.type === "storyLike"){
-    showView("viewStatus");
-    const list = storiesByUser[me.uid] || [];
-    if(list.some(s=>s.id === n.targetId)) openStories(me.uid, n.targetId); else toast("هذه الحالة لم تعد متاحة", "info", "⏳");
-  }else openProfile(n.from);          // طلب صداقة / قبول طلب
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1365,7 +1308,11 @@ function listenUsers(){
   }, err=>console.warn("sentRequests:", err.code || err));
 
   userChatsRef = db.ref("userChats/"+me.uid);
-  userChatsRef.on("value", s=>{ userChatsCache = s.val() || {}; ld.chats = true; scheduleCache(); renderChats(); }, err=>console.warn(err));
+  userChatsRef.on("value", s=>{
+    userChatsCache = s.val() || {}; ld.chats = true;
+    if(chatOther && $("chatPanel").classList.contains("open") && unreadOf(chatOther.uid)) clearUnread(chatOther.uid);
+    scheduleCache(); renderChats();
+  }, err=>console.warn(err));
 }
 
 /* البحث: لا يظهر أحد إلا عبر البحث (حرفان على الأقل لغير الأصدقاء) */
@@ -1378,6 +1325,7 @@ function findPeople(q, withMe){
 }
 
 function renderChats(){
+  paintUnread();
   const rawQ = $("chatFilter").value.trim();
   const q = norm(rawQ.replace(/^@+/, ""));
   const req = $("chatReq"), rec = $("chatRecent"), fri = $("chatFriends"), oth = $("chatOthers");
@@ -1423,14 +1371,14 @@ function renderChats(){
   if(recents.length){
     rec.appendChild(sub("آخر المحادثات"));
     recents.forEach(([uid,c])=>{
-      const un = unreadFrom(uid);
+      const un = unreadOf(uid);
       const item = el("div","user-item glass" + (un ? " has-unread" : ""));
       item.appendChild(avatarFor(uid, nameOf(uid)));
       const info = el("div","grow");
       info.appendChild(nameFor(uid, nameOf(uid), "div", "nm"));
       info.appendChild(el("div","last", (c.from === me.uid ? "أنت: " : "") + (c.text || "")));
       item.append(info, el("div","time", fmtTime(c.ts)));
-      if(un) item.appendChild(el("span","unread-dot"));
+      if(un) item.appendChild(el("span","unread-badge", un > 99 ? "99+" : String(un)));
       item.onclick = ()=>openChat(uid, nameOf(uid));
       rec.appendChild(item);
     });
@@ -1496,7 +1444,7 @@ function hydrate(){                                          // عرض فوري 
   userChatsCache = {...(lc.chats || {})};
   usersCache = {};
   for(const id in (lc.users || {})) usersCache[id] = {name: lc.users[id].name, username: lc.users[id].username, photo: null};
-  outQ.forEach(q=>{ userChatsCache[q.to] = {text: q.text.slice(0,80), from: me.uid, ts: q.ts, name: q.toName}; });
+  outQ.forEach(q=>{ userChatsCache[q.to] = {...(userChatsCache[q.to] || {}), text: q.text.slice(0,80), from: me.uid, ts: q.ts, name: q.toName}; });
   renderChats();
 }
 function wipeCache(){ appOn = false; clearTimeout(cacheTimer); if(me) try{ localStorage.removeItem(cKey(me.uid)); }catch{} }
@@ -1514,7 +1462,7 @@ function writeCache(){
   if(ld.friends) out.friends = {...friendsSet};
   if(ld.chats){
     const ents = Object.entries(userChatsCache).filter(([,c])=>c && c.ts).sort((a,b)=>b[1].ts - a[1].ts).slice(0, 30);
-    out.chats = Object.fromEntries(ents.map(([u,c])=>[u, {text: String(c.text||"").slice(0,80), from: c.from || "", ts: c.ts, name: c.name || ""}]));
+    out.chats = Object.fromEntries(ents.map(([u,c])=>[u, {text: String(c.text||"").slice(0,80), from: c.from || "", ts: c.ts, name: c.name || "", unread: +c.unread || 0}]));
   }
   if(ld.users || ld.friends || ld.chats){
     const ids = new Set([...Object.keys(out.friends), ...Object.keys(out.chats), ...Object.keys(incomingMap)]);
@@ -1604,15 +1552,17 @@ async function deliver(it, late){
   await db.ref("chats/"+it.cid+"/messages/"+it.id).set({from: me.uid, text: it.text, ts: TS});
   pushNotif(it.to, "msg_"+me.uid, {type:"message", targetType:"chat", targetId:it.cid, text:it.text.slice(0,80)});
   const last = {text: it.text.slice(0, 80), from: me.uid, ts: TS};
-  db.ref().update({
-    ["userChats/"+me.uid+"/"+it.to]: {...last, name: it.toName},
-    ["userChats/"+it.to+"/"+me.uid]: {...last, name: me.name}
+  const mineP = "userChats/"+me.uid+"/"+it.to+"/", theirP = "userChats/"+it.to+"/"+me.uid+"/";
+  db.ref().update({                                   // مسارات فرعية: لا نمسح عدّاد غير المقروء
+    [mineP+"text"]: last.text, [mineP+"from"]: me.uid, [mineP+"ts"]: TS, [mineP+"name"]: it.toName,
+    [theirP+"text"]: last.text, [theirP+"from"]: me.uid, [theirP+"ts"]: TS, [theirP+"name"]: me.name,
+    [theirP+"unread"]: firebase.database.ServerValue.increment(1)
   }).catch(err=>console.warn("userChats:", err));
 }
 function enqueue(it){
   outQ.push(it); saveQ(); paintNet();
   paintQ(it, "wait"); if(chatId === it.cid) scrollChat();
-  userChatsCache[it.to] = {text: it.text.slice(0,80), from: me.uid, ts: it.ts, name: it.toName};
+  userChatsCache[it.to] = {...(userChatsCache[it.to] || {}), text: it.text.slice(0,80), from: me.uid, ts: it.ts, name: it.toName};
   renderChats(); scheduleCache();
 }
 function scheduleRetry(){ clearTimeout(retryTimer); retryTimer = setTimeout(flushQueue, 5000); }
@@ -1666,7 +1616,7 @@ function openChat(otherUid, otherName){
   scrollChat();
   updateChatFriendBtn();
   $("chatPanel").classList.add("open");
-  markRead("msg_"+otherUid);
+  markRead("msg_"+otherUid); clearUnread(otherUid);
 
   chatRef = db.ref("chats/"+chatId+"/messages").orderByChild("ts").limitToLast(200);
   chatReady = false;
@@ -2138,13 +2088,7 @@ function bindZone(id, action){
 bindZone("svNext", ()=>svNext());
 bindZone("svPrev", ()=>svPrev());
 
-/* ❤️ الإعجاب بالحالة */
-function notifyStoryLike(s, liked){
-  if(!s || s.uid === me.uid) return;
-  const key = "sl_" + s.id + "_" + me.uid;                  // إشعار واحد لكل معجِب
-  if(liked) pushNotif(s.uid, key, {type:"storyLike", targetType:"story", targetId:s.id});
-  else removeNotif(s.uid, key);
-}
+/* ❤️ الإعجاب بالحالة — داخل الحالة فقط (بلا أي إشعار تنبيهي) */
 function toggleLike(){
   if(!sv || sv.uid === me.uid) return;
   const s = sv.list[sv.idx], want = !svLiked, tok = svTok;
@@ -2154,7 +2098,6 @@ function toggleLike(){
     const h = el("div","sv-heart","❤️"); $("svBody").appendChild(h); setTimeout(()=>h.remove(), 850);
   }
   db.ref("storyLikes/"+s.id+"/"+me.uid).set(want ? true : null)
-    .then(()=>notifyStoryLike(s, want))        // إشعار لصاحب الحالة (يظهر عنده في وسط الشاشة مع صوت الإشعار)
     .catch(err=>{ console.error(err); if(tok === svTok){ svLiked = !want; paintLike(); } toast("تعذّر تسجيل الإعجاب — تأكد من نشر قواعد storyLikes"); });
 }
 $("svLike").onclick = toggleLike;
