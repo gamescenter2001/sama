@@ -51,10 +51,10 @@ button:active{transform:scale(.96)}
 .g-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:12px;background:#fff;border:1px solid var(--line);font-weight:600}
 .g-btn:disabled{opacity:.6}.g-btn svg{width:20px;height:20px;flex-shrink:0}
 #app{min-height:100vh;display:flex;flex-direction:column}
-header.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top));background:rgba(255,255,255,.62);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);border-bottom:1px solid var(--line)}
-header.top .logo{font-size:26px}
-.me-chip{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px;cursor:pointer}
-main{flex:1;width:100%;max-width:720px;margin:0 auto;padding:16px 14px 110px}
+
+
+
+main{flex:1;width:100%;max-width:720px;margin:0 auto;padding:calc(18px + env(safe-area-inset-top)) 14px calc(96px + env(safe-area-inset-bottom))}
 .view{display:none}.view.active{display:block;animation:fade .16s ease-out}
 @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .avatar{width:42px;height:42px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;color:#fff;background:linear-gradient(135deg,#64a8ff,#a77bff);overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.05)}
@@ -88,7 +88,7 @@ nav.bottom button i{font-style:normal;font-size:19px;line-height:1}
 nav.bottom button.active{color:var(--neon2);background:rgba(10,132,255,.12)}
 .nav-dot{position:absolute;top:5px;inset-inline-end:calc(50% - 20px);width:9px;height:9px;border-radius:50%;background:var(--danger);border:2px solid #fff}
 ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:rgba(0,0,0,.18);border-radius:6px}
-.hd-right{display:flex;align-items:center;gap:10px}
+
 .unread-badge,.nav-badge{background:#ff3b30;color:#fff;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;border-radius:999px}
 .unread-badge{min-width:22px;height:22px;padding:0 6px;font-size:12px;flex-shrink:0;box-shadow:0 2px 6px rgba(255,59,48,.4)}
 .nav-badge{position:absolute;top:0;inset-inline-end:calc(50% - 28px);min-width:19px;height:19px;padding:0 4px;font-size:11px;border:2px solid #fff;box-sizing:border-box}
@@ -210,13 +210,14 @@ mark{background:rgba(10,132,255,.22);color:inherit;border-radius:4px;padding:0 2
 #dlgText{font-weight:700;font-size:16px;line-height:1.7;margin-bottom:16px}
 .dlg-row{display:flex;gap:10px}.dlg-row button{flex:1}
 /* ═══════ العمل بدون اتصال ═══════ */
-#netPill{position:fixed;top:calc(max(10px,env(safe-area-inset-top)) + 54px);left:50%;transform:translateX(-50%);z-index:60;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis;background:rgba(255,159,10,.18);color:#7a4700;border:1px solid rgba(255,159,10,.5);backdrop-filter:blur(14px) saturate(180%);-webkit-backdrop-filter:blur(14px) saturate(180%);pointer-events:none}
+#netPill{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translateX(-50%);z-index:60;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis;background:rgba(255,159,10,.18);color:#7a4700;border:1px solid rgba(255,159,10,.5);backdrop-filter:blur(14px) saturate(180%);-webkit-backdrop-filter:blur(14px) saturate(180%);pointer-events:none}
 .msg.pending{opacity:.78}
 .msg .qs{display:block;font-size:11px;margin-top:2px;opacity:.9}
 .msg .qs.ok{opacity:1}
 /* نبضة القلب */
 .sv-like.beat{animation:beat .3s ease-out}
 @keyframes beat{0%{transform:scale(1)}35%{transform:scale(1.35)}70%{transform:scale(.92)}100%{transform:scale(1)}}
+.chat-note{max-width:720px;width:100%;margin:0 auto;padding:10px 14px calc(10px + env(safe-area-inset-bottom));text-align:center;font-size:13px;font-weight:600;line-height:1.7;color:#7a4700;background:rgba(255,159,10,.14);border-top:1px solid rgba(255,159,10,.4)}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
@@ -272,16 +273,6 @@ mark{background:rgba(10,132,255,.22);color:inherit;border-radius:4px;padding:0 2
 
 <!-- ═══════════ التطبيق الرئيسي ═══════════ -->
 <div id="app" class="hidden">
-  <header class="top">
-    <div class="logo">سماء</div>
-    <div class="hd-right">
-      <button id="headSearch" class="icon-btn" type="button" aria-label="بحث">🔍</button>
-      <div class="me-chip" onclick="showView('viewMe')">
-        <span id="meName"></span>
-        <div id="meAvatar" class="avatar sm"></div>
-      </div>
-    </div>
-  </header>
 
   <main>
     <!-- المحادثات -->
@@ -368,6 +359,7 @@ mark{background:rgba(10,132,255,.22);color:inherit;border-radius:4px;padding:0 2
     <button id="chatFriend" class="mini" type="button"></button>
   </div>
   <div id="chatBody" class="chat-body"></div>
+  <div id="chatNote" class="chat-note hidden"></div>
   <form id="chatForm" class="chat-form">
     <input id="chatInput" class="field" placeholder="اكتب رسالة…" maxlength="1000" autocomplete="off">
     <button class="btn" type="submit">إرسال</button>
@@ -840,10 +832,10 @@ if(configured){
 }
 
 function renderMe(){
-  $("meName").textContent = me.name; $("meNameBig").textContent = me.name;
+  $("meNameBig").textContent = me.name;
   $("meHandle").textContent = me.username ? "@" + me.username : "";
   $("meEmailBig").textContent = me.email ? "🔒 " + me.email + " — خاص بك فقط" : "";
-  ["meAvatar","meAvatarBig"].forEach(i=>paintAvatar($(i), me.name, me.photo));
+  paintAvatar($("meAvatarBig"), me.name, me.photo);
   refreshProfiles();
 }
 
@@ -856,7 +848,6 @@ function showView(id){
   if(id==="viewStatus") renderStatus();
 }
 document.querySelectorAll("nav.bottom button").forEach(b=>{ b.onclick = ()=>showView(b.dataset.view); });
-$("headSearch").onclick = ()=>showView("viewSearch");
 
 /* ═══════════════════════════════════════════════════════════
    تشغيل/إيقاف المستمعات
@@ -1264,7 +1255,9 @@ function renderProfile(){
   $("pfFriend").textContent = st === "friend" ? "✓ صديق" : st === "incoming" ? "✓ قبول الطلب" : st === "sent" ? "⏳ تم إرسال الطلب" : "➕ إضافة صديق";
   $("pfFriend").classList.toggle("on", st === "friend" || st === "sent");
   $("pfDecline").classList.toggle("hidden", st !== "incoming");
-  $("pfChat").classList.toggle("hidden", st !== "friend");
+  const hasChat = !!(userChatsCache[profileUid] && userChatsCache[profileUid].ts);
+  $("pfChat").classList.toggle("hidden", !(st === "friend" || hasChat));
+  $("pfChat").textContent = st === "friend" ? "💬 مراسلة" : "💬 عرض المحادثة";
   $("pfStory").classList.toggle("hidden", !has);
 }
 $("pfBack").onclick = closeProfile;
@@ -1288,8 +1281,9 @@ function listenUsers(){
 
   friendsRef = db.ref("friends/"+me.uid);
   friendsRef.on("value", s=>{
+    const was = chatOther ? !!friendsSet[chatOther.uid] : false;
     friendsSet = s.val() || {}; ld.friends = true; scheduleCache();
-    if(chatOther && !friendsSet[chatOther.uid]){ closeChat(); toast("لم تعودا صديقين", "info", "👋"); }
+    if(chatOther && was && !friendsSet[chatOther.uid]) toast("أُلغيت الصداقة — سجل الرسائل باقٍ للقراءة فقط", "info", "👋");   // لا نغلق المحادثة ولا نحذف شيئاً
     rebuildStories();                       // الحالات تظهر للأصدقاء فقط
     renderChats(); renderProfile(); scheduleSearch(); updateChatFriendBtn();
   }, err=>console.warn(err));
@@ -1325,7 +1319,7 @@ function findPeople(q, withMe){
 }
 
 function renderChats(){
-  paintUnread();
+  paintUnread(); updateChatFriendBtn();
   const rawQ = $("chatFilter").value.trim();
   const q = norm(rawQ.replace(/^@+/, ""));
   const req = $("chatReq"), rec = $("chatRecent"), fri = $("chatFriends"), oth = $("chatOthers");
@@ -1366,7 +1360,7 @@ function renderChats(){
   }
 
   const recents = Object.entries(userChatsCache)
-    .filter(([uid,c])=>c && c.ts && friendsSet[uid])
+    .filter(([uid,c])=>c && c.ts)
     .sort((a,b)=>b[1].ts - a[1].ts);
   if(recents.length){
     rec.appendChild(sub("آخر المحادثات"));
@@ -1376,7 +1370,7 @@ function renderChats(){
       item.appendChild(avatarFor(uid, nameOf(uid)));
       const info = el("div","grow");
       info.appendChild(nameFor(uid, nameOf(uid), "div", "nm"));
-      info.appendChild(el("div","last", (c.from === me.uid ? "أنت: " : "") + (c.text || "")));
+      info.appendChild(el("div","last", (canChat(uid) ? "" : "👋 صداقة ملغاة · ") + (c.from === me.uid ? "أنت: " : "") + (c.text || "")));
       item.append(info, el("div","time", fmtTime(c.ts)));
       if(un) item.appendChild(el("span","unread-badge", un > 99 ? "99+" : String(un)));
       item.onclick = ()=>openChat(uid, nameOf(uid));
@@ -1399,11 +1393,17 @@ function renderChats(){
 }
 $("chatFilter").addEventListener("input", renderChats);
 
+/* قاعدة المراسلة: السجل يبقى ظاهراً دائماً (قراءة فقط)، والإرسال الجديد للأصدقاء فقط */
+const canChat = (uid)=>!!friendsSet[uid] || !(ld.friends || Object.keys(friendsSet).length);   // قبل تحميل الأصدقاء لا نحجب
 function updateChatFriendBtn(){
   if(!chatOther) return;
-  const f = !!friendsSet[chatOther.uid];
-  $("chatFriend").textContent = f ? "✓ صديق" : "➕ إضافة";
-  $("chatFriend").classList.toggle("on", f);
+  const uid = chatOther.uid, st = relState(uid), ok = canChat(uid);
+  $("chatFriend").textContent = st === "friend" ? "✓ صديق" : st === "incoming" ? "✓ قبول" : st === "sent" ? "⏳ تم الإرسال" : "➕ إضافة";
+  $("chatFriend").classList.toggle("on", st === "friend" || st === "sent");
+  $("chatForm").classList.toggle("hidden", !ok);
+  const n = $("chatNote"); n.classList.toggle("hidden", ok);
+  if(!ok) n.textContent = "👋 الصداقة ملغاة — سجل الرسائل محفوظ للقراءة فقط، ولا يمكن إرسال رسائل جديدة حتى تعودا صديقين" +
+    (st === "sent" ? " (بانتظار موافقته)" : st === "incoming" ? " (أرسل لك طلباً — اضغط «قبول»)" : "");
 }
 $("chatFriend").onclick = ()=>{ if(chatOther) friendAction(chatOther.uid, chatOther.name, $("chatFriend")); };
 
@@ -1573,6 +1573,7 @@ async function flushQueue(){
   try{
     while(outQ.length && netUp && me && me.uid === owner){
       const it = outQ[0];
+      if(!canChat(it.to)){ outQ.shift(); saveQ(); paintQ(it, "fail"); toast("لم تُرسل رسالة معلّقة لأن الصداقة أُلغيت", "info", "👋"); continue; }
       it.st = "send"; paintQ(it, "send");
       try{ await withTimeout(deliver(it, true), 10000); }
       catch(e){
@@ -1599,10 +1600,6 @@ async function sendMessageTo(otherUid, otherName, text){
 }
 
 function openChat(otherUid, otherName){
-  if(!friendsSet[otherUid]){              // المراسلة بين الأصدقاء فقط
-    toast(relState(otherUid) === "sent" ? "بانتظار موافقة " + otherName + " على طلب الصداقة" : "أضف " + otherName + " كصديق أولاً لتتمكن من مراسلته", "info", "🔒");
-    return;
-  }
   closeChat();
   chatId = [me.uid, otherUid].sort().join("_");
   chatOther = {uid: otherUid, name: otherName};
@@ -1645,6 +1642,7 @@ $("chatForm").addEventListener("submit", async (e)=>{
   const text = $("chatInput").value.trim();
   if(!text || !chatId || !chatOther) return;
   const other = chatOther;
+  if(!canChat(other.uid)){ updateChatFriendBtn(); toast("الصداقة ملغاة — لا يمكن إرسال رسائل جديدة", "info", "👋"); return; }
   playSound("send");
   $("chatInput").value = "";
   try{ await sendMessageTo(other.uid, other.name, text); }
